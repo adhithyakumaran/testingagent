@@ -59,6 +59,14 @@ function NavIcon({ name }: { name: string }) {
   );
 }
 
+function ViewPane({ active, name, children }: { active: boolean; name: ScoutView; children: ReactNode }) {
+  return (
+    <div className={`view view-${name}${active ? "" : " view-hidden"}`} aria-hidden={!active}>
+      {children}
+    </div>
+  );
+}
+
 export function ScoutApp() {
   const [view, setView] = useState<ScoutView>("chat");
   const [liveRun, setLiveRun] = useState<AgentRun | null>(null);
@@ -81,37 +89,7 @@ export function ScoutApp() {
 
   const onRunStarted = (run: AgentRun) => {
     setLiveRun(run);
-    if (run.status === "running" || run.status === "queued") {
-      setView("live");
-    }
   };
-
-  let content: ReactNode;
-  switch (view) {
-    case "chat":
-      content = <ChatAgentView onRunStarted={onRunStarted} onOpenLive={() => setView("live")} />;
-      break;
-    case "flows":
-      content = <FlowsView onRunFlow={() => setView("chat")} />;
-      break;
-    case "live":
-      content = <LiveRunView run={liveRun} onRunUpdate={setLiveRun} />;
-      break;
-    case "recorder":
-      content = <RecorderView />;
-      break;
-    case "connectors":
-      content = <ConnectorsView />;
-      break;
-    case "approvals":
-      content = <ApprovalsView />;
-      break;
-    case "history":
-      content = <HistoryView />;
-      break;
-    default:
-      content = null;
-  }
 
   return (
     <div className="scout-app">
@@ -207,7 +185,29 @@ export function ScoutApp() {
           </div>
         </header>
 
-        <div className={`view view-${view}`}>{content}</div>
+        <div className="view-stack">
+          <ViewPane active={view === "chat"} name="chat">
+            <ChatAgentView onRunStarted={onRunStarted} onOpenLive={() => setView("live")} />
+          </ViewPane>
+          <ViewPane active={view === "flows"} name="flows">
+            <FlowsView onRunFlow={() => setView("chat")} />
+          </ViewPane>
+          <ViewPane active={view === "live"} name="live">
+            <LiveRunView run={liveRun} onRunUpdate={setLiveRun} />
+          </ViewPane>
+          <ViewPane active={view === "recorder"} name="recorder">
+            <RecorderView />
+          </ViewPane>
+          <ViewPane active={view === "connectors"} name="connectors">
+            <ConnectorsView />
+          </ViewPane>
+          <ViewPane active={view === "approvals"} name="approvals">
+            <ApprovalsView />
+          </ViewPane>
+          <ViewPane active={view === "history"} name="history">
+            <HistoryView />
+          </ViewPane>
+        </div>
       </div>
     </div>
   );

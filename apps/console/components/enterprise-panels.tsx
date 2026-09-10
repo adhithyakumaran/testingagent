@@ -32,8 +32,8 @@ export function SmeApprovalQueue() {
       <div className="scout-inbox-body">
         <p className="scout-muted">Flows awaiting SME sign-off before production CI runs.</p>
         <ul>
-          {items.slice(0, 8).map((item) => (
-            <li key={item.flowId}>
+          {items.slice(0, 8).map((item, i) => (
+            <li key={`${item.flowId}-${i}`}>
               <strong>{item.flowId}</strong>
               <span>{item.status}</span>
               <p>

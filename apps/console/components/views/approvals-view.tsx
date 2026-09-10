@@ -15,7 +15,15 @@ export function ApprovalsView({ compact, onClose }: { compact?: boolean; onClose
   useEffect(() => {
     fetch("/api/approval")
       .then((r) => r.json())
-      .then((json) => setItems(json.flows || []))
+      .then((json) => {
+        const seen = new Set<string>();
+        const unique = (json.flows || []).filter((item: ApprovalItem) => {
+          if (seen.has(item.flowId)) return false;
+          seen.add(item.flowId);
+          return true;
+        });
+        setItems(unique);
+      })
       .catch(() => setItems([]));
   }, []);
 

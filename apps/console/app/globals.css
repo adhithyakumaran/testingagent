@@ -417,6 +417,25 @@ a:hover {
   flex-direction: column;
   flex: 1;
   min-height: 0;
+  gap: 1rem;
+}
+
+.live-run-banner {
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius-md);
+  background: var(--accent-soft);
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.live-run-banner strong {
+  color: var(--accent);
+}
+
+.live-timeline-full {
+  flex: 1;
+  min-height: 0;
 }
 
 .status-chip {
@@ -502,6 +521,18 @@ a:hover {
   min-height: 0;
   padding: 1.25rem;
   overflow: hidden;
+}
+
+.view-stack {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.view-hidden {
+  display: none !important;
 }
 
 .view.view-chat {
@@ -634,8 +665,9 @@ a:hover {
 }
 
 .chat-row.user .chat-msg-bubble {
-  background: var(--accent);
-  color: #fff;
+  background: rgba(167, 139, 250, 0.22);
+  color: var(--text);
+  border: none;
   border-bottom-right-radius: var(--radius-sm);
 }
 
@@ -773,7 +805,7 @@ a:hover {
 
 .chat-composer {
   flex-shrink: 0;
-  border-top: 1px solid var(--border);
+  border-top: none;
   background: transparent;
   padding: 0.75rem 1rem 1rem;
 }
@@ -820,9 +852,9 @@ a:hover {
   width: 100%;
   margin: 0 auto;
   padding: 0.55rem 0.55rem 0.55rem 0.85rem;
-  border: 1px solid var(--border);
+  border: none;
   border-radius: var(--radius-lg);
-  background: var(--surface-raised);
+  background: rgba(255, 255, 255, 0.04);
   box-shadow: none;
 }
 

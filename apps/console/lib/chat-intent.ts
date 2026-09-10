@@ -18,6 +18,8 @@ const LIST_FLOW_PATTERNS = [
   /\blist (all |)(the )?flows\b/i,
   /\bshow (me )?(all |)(the )?flows\b/i,
   /\bflows (do )?you have\b/i,
+  /\bflows?\s+(u|you)\s+(have|hav|got)\b/i,
+  /\bwhat.*flows.*\b(have|hav|got)\b/i,
   /\bavailable flows\b/i,
   /\bhow many flows\b/i,
   /\bwhat can you test\b/i,
@@ -56,10 +58,19 @@ export function classifyChatIntent(text: string): ChatIntent {
     return { kind: "list_flows", tag: /sanity/.test(lower) ? "sanity" : undefined };
   }
 
+  if (/\bflows?\b/i.test(t) && /\b(have|hav|got|available|cover)\b/i.test(t)) {
+    return { kind: "list_flows" };
+  }
+
   if (/^(what|which|how|why|can you|could you|do you|help)\b/i.test(t) && !/\b(run|test|execute|start)\b/i.test(t)) {
     if (/\bflows?\b/i.test(t)) return { kind: "list_flows" };
     return { kind: "help" };
   }
 
-  return { kind: "run_agent" };
+  // Safe default — never auto-run unless the user explicitly asked to run/test.
+  if (/\b(run|execute|start|trigger|test)\b/i.test(t)) {
+    return { kind: "run_agent" };
+  }
+
+  return { kind: "help" };
 }

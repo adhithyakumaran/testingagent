@@ -21,7 +21,6 @@ sme_ready:
   - BF-RIVAAH-005-03
   - BF-RIVAAH-005-04
   - BF-RIVAAH-005-05
-  - BF-HOME-010-C01
 flows:
   - id: BF-ADMINISTRATION-009
     file: BF-ADMINISTRATION-009.yaml
