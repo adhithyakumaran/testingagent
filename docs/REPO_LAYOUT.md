@@ -62,6 +62,8 @@ apps/automation/suites/            ← sanity / regression manifests
 
 | Feature | Location |
 |---|---|
+| Scheduled crawl (post-deploy / cron) | `scripts/scheduled_crawl.py` |
+| KB-priority crawl seeds | `plugins/qa_apex/crawler/seeds.py` |
 | Crawl snapshot diffing | `plugins/qa_apex/crawler/persistence.py` → `data/discovery-kb/crawl_snapshots/` |
 | Capability synonyms (payment→billing) | `data/discovery-kb/capability_synonyms.yaml` |
 | Regression / negative suite modes | `services/qa-orchestrator/qa_orchestrator/suite_selector.py` |

@@ -2,6 +2,7 @@
 
 Deterministic-first agent runtime + **ScoutAI** orchestrator for Oracle APEX Endless Aisle UAT.
 
+> **Canonical repo:** https://github.com/adhithyakumaran/testingagent  
 > **Repo layout v2:** See [docs/REPO_LAYOUT.md](docs/REPO_LAYOUT.md) for the enterprise folder structure.
 
 ## Quick start (local)
