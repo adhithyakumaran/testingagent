@@ -90,14 +90,19 @@ function terminalLine(ev: RecorderEvent): { tag: string; tagClass: string; text:
 
 export function BrowserRecorderPanel({ layout = "panel" }: { layout?: "panel" | "terminal" }) {
   const [config, setConfig] = useState<RecorderConfig>(DEFAULT_CONFIG);
-  const [sessionId] = useState(() => `scout-${Date.now().toString(36)}`);
+  const [sessionId, setSessionId] = useState("");
   const [recording, setRecording] = useState(false);
   const [status, setStatus] = useState<string>("idle");
   const [message, setMessage] = useState<string | null>(null);
   const [liveEvents, setLiveEvents] = useState<RecorderEvent[]>([]);
   const sourceRef = useRef<EventSource | null>(null);
 
+  useEffect(() => {
+    setSessionId(`scout-${Date.now().toString(36)}`);
+  }, []);
+
   const refreshStatus = useCallback(async () => {
+    if (!sessionId) return;
     try {
       const res = await fetch(`/api/recorder?sessionId=${sessionId}`, { cache: "no-store" });
       if (res.ok) {
@@ -110,11 +115,12 @@ export function BrowserRecorderPanel({ layout = "panel" }: { layout?: "panel" | 
   }, [sessionId]);
 
   useEffect(() => {
+    if (!sessionId) return;
     refreshStatus();
     return () => {
       sourceRef.current?.close();
     };
-  }, [refreshStatus]);
+  }, [sessionId, refreshStatus]);
 
   async function saveConfig(next: RecorderConfig) {
     setConfig(next);

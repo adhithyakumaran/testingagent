@@ -151,101 +151,88 @@ export async function getFlowSummary(flowId: string): Promise<FlowSummary | null
   return flows.find((f) => f.id === flowId) || null;
 }
 
-export async function getArtifactMarkdown(flowId: string, type: FlowArtifactType): Promise<{ title: string; markdown: string } | null> {
+export async function getArtifactMarkdown(
+  flowId: string,
+  type: FlowArtifactType,
+  rawOnly = true
+): Promise<{ title: string; markdown: string } | null> {
   const summary = await getFlowSummary(flowId);
   if (!summary) return null;
 
   if (type === "scenarios") {
     const raw = await readOptional(path.join(DESIGN_ROOT, flowId, "scenarios.yaml"));
     if (!raw) return null;
-    const blocks = parseScenarioBlocks(raw);
-    const lines = [
-      `# Scenarios`,
-      "",
-      `**Flow:** \`${flowId}\` — ${summary.name}`,
-      "",
-      `${blocks.length} scenario(s)`,
-      "",
-    ];
-    for (const s of blocks) {
-      lines.push(`## ${s.id}`, "");
-      if (s.title) lines.push(`**${s.title}**`, "");
-      if (s.type || s.priority) lines.push(`Type: ${s.type || "—"} · Priority: ${s.priority || "—"}`, "");
-      if (s.steps.length) {
-        lines.push("### Steps", "");
-        for (const step of s.steps) lines.push(`- ${step}`);
-        lines.push("");
-      }
-      if (s.tags.length) lines.push(`Tags: ${s.tags.map((t) => `\`${t}\``).join(", ")}`, "");
-    }
-    lines.push("", yamlSourceSection("scenarios.yaml", raw));
-    return { title: "Scenarios", markdown: lines.join("\n") };
+    return {
+      title: "Scenarios",
+      markdown: rawOnly ? `\`\`\`yaml\n${raw.trim()}\n\`\`\`` : _buildScenariosMarkdown(flowId, summary.name, raw),
+    };
   }
 
   if (type === "test-cases") {
     const raw = await readOptional(path.join(DESIGN_ROOT, flowId, "test-cases.yaml"));
     if (!raw) return null;
-    const blocks = parseTestCaseBlocks(raw);
-    const lines = [
-      `# Test Cases`,
-      "",
-      `**Flow:** \`${flowId}\` — ${summary.name}`,
-      "",
-      `${blocks.length} test case(s)`,
-      "",
-    ];
-    for (const tc of blocks) {
-      lines.push(`## ${tc.id}`, "");
-      if (tc.title) lines.push(`**${tc.title}**`, "");
-      lines.push(`Type: ${tc.type || "—"} · Priority: ${tc.priority || "—"}`, "");
-      if (tc.linked) lines.push(`Linked scenario: \`${tc.linked}\``, "");
-      if (tc.stepsSummary) lines.push(`Summary: ${tc.stepsSummary}`, "");
-      lines.push("");
-    }
-    lines.push("", yamlSourceSection("test-cases.yaml", raw));
-    return { title: "Test Cases", markdown: lines.join("\n") };
+    return {
+      title: "Test Cases",
+      markdown: rawOnly ? `\`\`\`yaml\n${raw.trim()}\n\`\`\`` : _buildTestCasesMarkdown(flowId, summary.name, raw),
+    };
   }
 
   if (type === "suite") {
     const raw = await readOptional(path.join(DESIGN_ROOT, flowId, "suite.yaml"));
     if (!raw) return null;
-    const suite = parseSuite(raw);
-    const lines = [
-      `# Test Suite`,
-      "",
-      `**Flow:** \`${flowId}\` — ${summary.name}`,
-      "",
-      `**Suite ID:** \`${suite.suiteId || "—"}\``,
-      "",
-    ];
-    if (suite.tags.length) lines.push(`Tags: ${suite.tags.map((t) => `\`${t}\``).join(", ")}`, "");
-    if (suite.cases.length) {
-      lines.push("", "## Included test cases", "");
-      for (const tc of suite.cases) lines.push(`- \`${tc}\``);
-    }
-    if (suite.sanity.length) {
-      lines.push("", "## Sanity subset", "");
-      for (const tc of suite.sanity) lines.push(`- \`${tc}\``);
-    }
-    if (suite.command) lines.push("", `Runner: \`${suite.command}\``, "");
-    lines.push("", yamlSourceSection("suite.yaml", raw));
-    return { title: "Test Suite", markdown: lines.join("\n") };
+    return {
+      title: "Test Suite",
+      markdown: rawOnly ? `\`\`\`yaml\n${raw.trim()}\n\`\`\`` : _buildSuiteMarkdown(flowId, summary.name, raw),
+    };
   }
 
   const scripts = await findSpecFiles(flowId);
   if (!scripts.length) return null;
-  const lines = [
-    `# Test Scripts`,
-    "",
-    `**Flow:** \`${flowId}\` — ${summary.name}`,
-    "",
-    `${scripts.length} Playwright spec file(s)`,
-    "",
-  ];
-  for (const scriptPath of scripts) {
-    const rel = path.relative(path.join(repoRoot(), "apps", "automation"), scriptPath).replace(/\\/g, "/");
-    const content = await fs.readFile(scriptPath, "utf8");
-    lines.push(`## ${rel}`, "", "```typescript", content.trim(), "```", "");
+  const blocks = await Promise.all(
+    scripts.map(async (scriptPath) => {
+      const rel = path.relative(path.join(repoRoot(), "apps", "automation"), scriptPath).replace(/\\/g, "/");
+      const content = await fs.readFile(scriptPath, "utf8");
+      return `\`\`\`typescript\n// ${rel}\n${content.trim()}\n\`\`\``;
+    })
+  );
+  return { title: "Test Scripts", markdown: blocks.join("\n\n") };
+}
+
+function _buildScenariosMarkdown(flowId: string, name: string, raw: string): string {
+  const blocks = parseScenarioBlocks(raw);
+  const lines = [`# Scenarios`, "", `**Flow:** \`${flowId}\` — ${name}`, "", `${blocks.length} scenario(s)`, ""];
+  for (const s of blocks) {
+    lines.push(`## ${s.id}`, "");
+    if (s.title) lines.push(`**${s.title}**`, "");
+    if (s.steps.length) {
+      lines.push("### Steps", "");
+      for (const step of s.steps) lines.push(`- ${step}`);
+      lines.push("");
+    }
   }
-  return { title: "Test Scripts", markdown: lines.join("\n") };
+  lines.push("", yamlSourceSection("scenarios.yaml", raw));
+  return lines.join("\n");
+}
+
+function _buildTestCasesMarkdown(flowId: string, name: string, raw: string): string {
+  const blocks = parseTestCaseBlocks(raw);
+  const lines = [`# Test Cases`, "", `**Flow:** \`${flowId}\` — ${name}`, "", `${blocks.length} test case(s)`, ""];
+  for (const tc of blocks) {
+    lines.push(`## ${tc.id}`, "");
+    if (tc.title) lines.push(`**${tc.title}**`, "");
+    lines.push("");
+  }
+  lines.push("", yamlSourceSection("test-cases.yaml", raw));
+  return lines.join("\n");
+}
+
+function _buildSuiteMarkdown(flowId: string, name: string, raw: string): string {
+  const suite = parseSuite(raw);
+  const lines = [`# Test Suite`, "", `**Flow:** \`${flowId}\` — ${name}`, ""];
+  if (suite.cases.length) {
+    lines.push("## Included test cases", "");
+    for (const tc of suite.cases) lines.push(`- \`${tc}\``);
+  }
+  lines.push("", yamlSourceSection("suite.yaml", raw));
+  return lines.join("\n");
 }

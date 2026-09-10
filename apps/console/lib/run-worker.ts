@@ -1,6 +1,7 @@
 import { executeRun } from "@/lib/agent-runner";
 import { deliverReport } from "@/lib/notify";
 import { mutateState, pushHistory } from "@/lib/store";
+import { applyAutomationEnvToProcess } from "@/lib/uat-env";
 import type { AgentRun } from "@/lib/types";
 import { uid } from "@/lib/utils";
 
@@ -8,6 +9,7 @@ export async function executeRunInBackground(
   runId: string,
   opts: { knowledgeIds: string[]; notify: string[]; headed?: boolean }
 ) {
+  await applyAutomationEnvToProcess();
   if (opts.headed) {
     process.env.QA_HEADED = "true";
     process.env.EA_HEADLESS = "false";

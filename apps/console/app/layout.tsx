@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Mono, Instrument_Sans } from "next/font/google";
+import { IBM_Plex_Mono, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 
-const body = Instrument_Sans({
+const body = Plus_Jakarta_Sans({
   subsets: ["latin"],
   variable: "--font-body",
 });

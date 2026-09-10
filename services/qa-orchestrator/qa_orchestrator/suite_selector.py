@@ -55,21 +55,21 @@ class SuiteSelector:
             flow_ids = _unique_primary(self.graph, flow_ids)
             if not flow_ids:
                 flow_ids = self.graph.flows_for_query_semantic(intent.goal, limit=6)
-            commands = [f"npm run test:flow -- @{fid}" for fid in flow_ids]
+            commands = [f"npm run test:flow:positive -- @{fid}" for fid in flow_ids]
             suite_ids = [f"FLOW-{fid}" for fid in flow_ids]
             notes.append(f"Incident / keyword traversal: {len(flow_ids)} related READY flow suite(s)")
 
         elif mode in {"new_feature", "discover"}:
             flow_ids = _unique_primary(self.graph, intent.flow_ids) or self.graph.search_flows(intent.goal, limit=1)
             if flow_ids:
-                commands = [f"npm run test:flow -- @{flow_ids[0]}"]
+                commands = [f"npm run test:flow:positive -- @{flow_ids[0]}"]
                 suite_ids = [f"FLOW-{flow_ids[0]}"]
             notes.append("Primary suite run plus discovery crawl for KB/suite suggestions")
 
         elif mode == "adhoc_parameterized":
             flow_ids = _unique_primary(self.graph, intent.flow_ids) or ["BF-PRODUCT-003"]
             fid = flow_ids[0]
-            commands = [f"npm run test:flow -- @{fid}"]
+            commands = [f"npm run test:flow:positive -- @{fid}"]
             suite_ids = [f"FLOW-{fid}"]
             notes.append(f"Parameterized run — pass params via env: {params}")
 
@@ -79,13 +79,13 @@ class SuiteSelector:
                 flow_ids = self.graph.flows_for_query_semantic(intent.goal, limit=3)
             if len(flow_ids) == 1:
                 fid = flow_ids[0]
-                commands = [f"npm run test:flow -- @{fid}"]
+                commands = [f"npm run test:flow:positive -- @{fid}"]
                 suite_ids = [f"FLOW-{fid}"]
-                notes.append(f"Adhoc sanity for single flow {fid}")
+                notes.append(f"Adhoc positive/sanity run for {fid} (skips @negative specs)")
             elif flow_ids:
-                commands = [f"npm run test:flow -- @{fid}" for fid in flow_ids[:5]]
+                commands = [f"npm run test:flow:positive -- @{fid}" for fid in flow_ids[:5]]
                 suite_ids = [f"FLOW-{fid}" for fid in flow_ids[:5]]
-                notes.append(f"Adhoc multi-flow: {len(flow_ids)} suite(s)")
+                notes.append(f"Adhoc multi-flow positive runs: {len(flow_ids)} suite(s)")
             else:
                 suite_ids = ["SUITE-SANITY-MORNING"]
                 commands = ["npm run test:sanity"]

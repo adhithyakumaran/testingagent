@@ -10,6 +10,7 @@
     "test:regression": "playwright test --grep @regression",
     "test:negative": "playwright test --grep @negative",
     "test:flow": "playwright test --grep",
+    "test:flow:positive": "playwright test --grep @sanity --grep",
     "test:headed": "playwright test --headed",
     "test:unit-url": "playwright test tests/unit/app-url.spec.ts",
     "debug:login": "node scripts/debug-login.mjs",

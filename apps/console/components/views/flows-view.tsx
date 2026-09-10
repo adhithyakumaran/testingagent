@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ReportPreview } from "@/components/report-preview";
 
 type FlowSummary = {
   id: string;
@@ -38,8 +37,7 @@ function FlowMarkdown({ markdown }: { markdown: string }) {
             </pre>
           );
         }
-        if (!chunk.trim()) return null;
-        return <ReportPreview key={i} markdown={chunk} evidence={[]} />;
+        return null;
       })}
     </div>
   );
