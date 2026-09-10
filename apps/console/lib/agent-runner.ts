@@ -7,6 +7,17 @@ import { uid } from "@/lib/utils";
 const REPO_ROOT = repoRoot();
 const LOCAL_AGENT_URL = process.env.LOCAL_AGENT_URL || "http://127.0.0.1:43124";
 
+function agentTimeoutMs(goal: string, runType: string): number {
+  const g = goal.toLowerCase();
+  if (runType === "sanity" || g.includes("morning sanity") || g.includes("sanity check")) {
+    return 2 * 60 * 60 * 1000;
+  }
+  if (g.includes("regression") || runType === "scheduled") {
+    return 2 * 60 * 60 * 1000;
+  }
+  return 45 * 60 * 1000;
+}
+
 function extractPills(pills: KnowledgePill[]) {
   return pills.map((p) => {
     const extracted: Record<string, unknown> = {
@@ -56,7 +67,7 @@ async function invokeWarmAgent(
         context_packets: opts.contextPackets,
         headed: opts.headed === true,
       }),
-      signal: AbortSignal.timeout(120_000),
+      signal: AbortSignal.timeout(agentTimeoutMs(goal, opts.runType)),
     });
     if (!res.ok) {
       return { ok: false, error: `warm_agent_http_${res.status}`, via: "warm" };
@@ -115,10 +126,11 @@ async function invokePythonAgentSpawn(
     });
     let stdout = "";
     let stderr = "";
+    const timeoutMs = agentTimeoutMs(goal, opts.runType);
     const timer = setTimeout(() => {
       py.kill("SIGKILL");
-      resolve({ ok: false, error: "spawn_timeout", via: "spawn" });
-    }, 120_000);
+      resolve({ ok: false, error: `spawn_timeout after ${Math.round(timeoutMs / 60000)}m`, via: "spawn" });
+    }, timeoutMs);
     py.stdout.on("data", (d) => {
       stdout += d.toString();
     });

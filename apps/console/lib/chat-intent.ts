@@ -46,6 +46,10 @@ export function classifyChatIntent(text: string): ChatIntent {
     return { kind: "run_agent" };
   }
 
+  if (/\bsanity\b/i.test(t) && /\b(all|every|full|check|run|flows?)\b/i.test(t)) {
+    return { kind: "run_agent" };
+  }
+
   if (LIST_FLOW_PATTERNS.some((p) => p.test(t))) {
     return { kind: "list_flows", tag: /sanity/.test(lower) ? "sanity" : undefined };
   }

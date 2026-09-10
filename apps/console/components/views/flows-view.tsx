@@ -1,10 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
 
 type FlowSummary = {
   id: string;
   name: string;
+  description: string;
   status: string;
   tags: string[];
   scenarioCount: number;
@@ -43,6 +45,17 @@ function FlowMarkdown({ markdown }: { markdown: string }) {
   );
 }
 
+function tagLabels(flow: FlowSummary): string[] {
+  const labels: string[] = [];
+  if (flow.scenarioCount > 0) labels.push(`${flow.scenarioCount} SC`);
+  if (flow.testCaseCount > 0) labels.push(`${flow.testCaseCount} TC`);
+  if (flow.scriptCount > 0) labels.push(`${flow.scriptCount} TS`);
+  for (const tag of flow.tags.slice(0, 3)) {
+    labels.push(tag.replace(/^@/, "").slice(0, 8).toUpperCase());
+  }
+  return labels.slice(0, 5);
+}
+
 export function FlowsView({ onRunFlow }: { onRunFlow: (goal: string) => void }) {
   const [flows, setFlows] = useState<FlowSummary[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -50,6 +63,7 @@ export function FlowsView({ onRunFlow }: { onRunFlow: (goal: string) => void }) 
   const [markdown, setMarkdown] = useState("");
   const [loadingArtifact, setLoadingArtifact] = useState(false);
   const [artifactError, setArtifactError] = useState<string | null>(null);
+  const carouselRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetch("/api/flows")
@@ -85,6 +99,12 @@ export function FlowsView({ onRunFlow }: { onRunFlow: (goal: string) => void }) 
     void loadArtifact(selectedId, tab);
   }, [selectedId, tab, loadArtifact]);
 
+  function scrollCarousel(direction: -1 | 1) {
+    const el = carouselRef.current;
+    if (!el) return;
+    el.scrollBy({ left: direction * 340, behavior: "smooth" });
+  }
+
   function tabCount(flow: FlowSummary, key: (typeof TABS)[number]["countKey"]) {
     if (key === "suiteReady") return flow.suiteReady ? 1 : 0;
     return flow[key] as number;
@@ -92,97 +112,117 @@ export function FlowsView({ onRunFlow }: { onRunFlow: (goal: string) => void }) 
 
   return (
     <div className="flows-view">
-      <div className="flows-header">
-        <div>
-          <h2 className="view-title">Flows &amp; Suites</h2>
-          <p className="view-subtitle">
-            {flows.length} SME-approved flow{flows.length === 1 ? "" : "s"} · tap a flow to inspect design artifacts
+      <div className="flows-hero">
+        <div className="flows-hero-copy">
+          <h2 className="flows-hero-title">Built for how you test</h2>
+          <p className="flows-hero-sub">
+            {flows.length} SME-approved automation flow{flows.length === 1 ? "" : "s"} from your discovery KB.
+            Select a card to inspect scenarios, test cases, scripts, and suite YAML — all real artifacts, no placeholders.
           </p>
         </div>
-        {selected && (
-          <button type="button" className="chat-cta primary" onClick={() => onRunFlow(`run sanity for ${selected.id}`)}>
-            Run this flow
+        <div className="flows-hero-actions">
+          <button
+            type="button"
+            className="btn-ghost"
+            onClick={() => onRunFlow("run morning sanity check for all flows")}
+          >
+            Run all sanity ↗
           </button>
-        )}
+          <button type="button" className="flows-nav-btn" aria-label="Scroll left" onClick={() => scrollCarousel(-1)}>
+            <ChevronLeft size={18} />
+          </button>
+          <button type="button" className="flows-nav-btn" aria-label="Scroll right" onClick={() => scrollCarousel(1)}>
+            <ChevronRight size={18} />
+          </button>
+        </div>
       </div>
 
-      <div className="flows-layout">
-        <aside className="flows-list-panel">
-          <div className="flows-count-card">
-            <span className="flows-count-num">{flows.length}</span>
-            <span className="flows-count-label">Approved flows</span>
-          </div>
-          <div className="flows-list">
+      <div className="flows-carousel-wrap">
+        {flows.length === 0 ? (
+          <div className="flows-empty-carousel">No approved flows found in the discovery KB.</div>
+        ) : (
+          <div className="flows-carousel" ref={carouselRef}>
             {flows.map((f) => (
               <button
                 key={f.id}
                 type="button"
-                className={`flow-card${selectedId === f.id ? " active" : ""}`}
+                className={`flow-card-composio${selectedId === f.id ? " active" : ""}`}
                 onClick={() => {
                   setSelectedId(f.id);
                   setTab("scenarios");
                 }}
               >
-                <div className="flow-card-top">
-                  <span className="flow-card-id mono">{f.id}</span>
-                  <span className="status-pill pass">{f.status}</span>
+                <h3 className="flow-card-composio-title">{f.name}</h3>
+                <p className="flow-card-composio-desc">
+                  {f.description || `${f.id} — ${f.scenarioCount} scenarios, ${f.testCaseCount} test cases.`}
+                </p>
+                <div className="flow-card-composio-tray">
+                  {tagLabels(f).map((label) => (
+                    <span key={label} className="flow-card-composio-tag">
+                      {label}
+                    </span>
+                  ))}
                 </div>
-                <div className="flow-card-name">{f.name}</div>
-                <div className="flow-card-meta">
-                  {f.scenarioCount} sc · {f.testCaseCount} tc · {f.scriptCount} scripts
+                <div className="flow-card-composio-foot">
+                  <span>Explore</span>
+                  <ArrowRight size={16} />
                 </div>
               </button>
             ))}
           </div>
-        </aside>
-
-        <section className="flows-detail-panel">
-          {!selected ? (
-            <div className="view-empty">
-              <p>Select a flow to view scenarios, test cases, scripts, and suite definition.</p>
-            </div>
-          ) : (
-            <>
-              <div className="flows-detail-head">
-                <div>
-                  <div className="flows-detail-id mono">{selected.id}</div>
-                  <h3 className="flows-detail-title">{selected.name}</h3>
-                </div>
-                <div className="flows-detail-stats">
-                  <span>{selected.scenarioCount} scenarios</span>
-                  <span>{selected.testCaseCount} test cases</span>
-                  <span>{selected.scriptCount} scripts</span>
-                </div>
-              </div>
-
-              <div className="flows-artifact-tabs">
-                {TABS.map((t) => {
-                  const count = tabCount(selected, t.countKey);
-                  const disabled = t.id === "suite" ? !selected.suiteReady : count === 0;
-                  return (
-                    <button
-                      key={t.id}
-                      type="button"
-                      className={`flows-artifact-tab${tab === t.id ? " active" : ""}`}
-                      disabled={disabled}
-                      onClick={() => setTab(t.id)}
-                    >
-                      {t.label}
-                      <span className="flows-tab-count">{count || "—"}</span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div className="flows-md-panel">
-                {loadingArtifact && <div className="flows-md-loading">Loading markdown view…</div>}
-                {!loadingArtifact && artifactError && <div className="alert">{artifactError}</div>}
-                {!loadingArtifact && !artifactError && markdown && <FlowMarkdown markdown={markdown} />}
-              </div>
-            </>
-          )}
-        </section>
+        )}
       </div>
+
+      {selected && (
+        <section className="flows-detail-section">
+          <div className="flows-detail-head">
+            <div>
+              <div className="flows-detail-id mono">{selected.id}</div>
+              <h3 className="flows-detail-title">{selected.name}</h3>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "0.65rem" }}>
+              <div className="flows-detail-stats">
+                <span>{selected.scenarioCount} scenarios</span>
+                <span>{selected.testCaseCount} test cases</span>
+                <span>{selected.scriptCount} scripts</span>
+                <span>{selected.status}</span>
+              </div>
+              <button
+                type="button"
+                className="btn-accent"
+                onClick={() => onRunFlow(`run sanity for ${selected.id}`)}
+              >
+                Run this flow
+              </button>
+            </div>
+          </div>
+
+          <div className="flows-artifact-tabs">
+            {TABS.map((t) => {
+              const count = tabCount(selected, t.countKey);
+              const disabled = t.id === "suite" ? !selected.suiteReady : count === 0;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  className={`flows-artifact-tab${tab === t.id ? " active" : ""}`}
+                  disabled={disabled}
+                  onClick={() => setTab(t.id)}
+                >
+                  {t.label}
+                  <span className="flows-tab-count">{count || "—"}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flows-md-panel">
+            {loadingArtifact && <div className="flows-md-loading">Loading artifact…</div>}
+            {!loadingArtifact && artifactError && <div className="alert">{artifactError}</div>}
+            {!loadingArtifact && !artifactError && markdown && <FlowMarkdown markdown={markdown} />}
+          </div>
+        </section>
+      )}
     </div>
   );
 }

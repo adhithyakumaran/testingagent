@@ -47,11 +47,60 @@ function ViewPane({ active, name, children }: { active: boolean; name: ScoutView
   );
 }
 
+type OrchestratorHealth = {
+  ok?: boolean;
+  primary_ready_flows?: number;
+  executor?: string;
+  llm_enabled?: boolean;
+};
+
+function OrchestratorStatus() {
+  const [health, setHealth] = useState<OrchestratorHealth | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const res = await fetch("/api/orchestrator", { cache: "no-store" });
+        const json = (await res.json()) as OrchestratorHealth;
+        if (!cancelled) setHealth(json);
+      } catch {
+        if (!cancelled) setHealth({ ok: false });
+      }
+    };
+    void poll();
+    const id = setInterval(poll, 15000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
+
+  const online = health?.ok === true;
+  const flows = health?.primary_ready_flows;
+
+  return (
+    <div className="orchestrator-status">
+      <p className="orchestrator-status-label">Orchestrator</p>
+      <div className="orchestrator-status-row">
+        <span className={`orchestrator-dot ${online ? "online" : "offline"}`} />
+        {online ? "Connected" : "Offline"}
+      </div>
+      <p className="orchestrator-status-meta">
+        {online
+          ? `${flows ?? "—"} ready flows · ${health?.executor || "playwright"}${health?.llm_enabled ? " · LLM" : ""}`
+          : "Start python scripts/local_agent_server.py"}
+      </p>
+    </div>
+  );
+}
+
 export function ScoutApp() {
   const [view, setView] = useState<ScoutView>("chat");
   const [liveRun, setLiveRun] = useState<AgentRun | null>(null);
   const [showApprovals, setShowApprovals] = useState(false);
   const [pendingApprovals, setPendingApprovals] = useState(0);
+  const [pendingGoal, setPendingGoal] = useState<string | null>(null);
 
   const refreshApprovals = useCallback(async () => {
     try {
@@ -100,13 +149,7 @@ export function ScoutApp() {
         </nav>
 
         <div className="sidebar-footer">
-          <div className="credit-bar">
-            <p className="credit-bar-label">Runtime</p>
-            <div className="credit-bar-track">
-              <div className="credit-bar-fill" style={{ width: "62%" }} />
-            </div>
-            <p className="credit-bar-meta">Local orchestrator</p>
-          </div>
+          <OrchestratorStatus />
         </div>
       </aside>
 
@@ -157,10 +200,20 @@ export function ScoutApp() {
 
         <div className="view-stack">
           <ViewPane active={view === "chat"} name="chat">
-            <ChatAgentView onRunStarted={onRunStarted} onOpenLive={() => setView("live")} />
+            <ChatAgentView
+              onRunStarted={onRunStarted}
+              onOpenLive={() => setView("live")}
+              pendingGoal={pendingGoal}
+              onPendingGoalHandled={() => setPendingGoal(null)}
+            />
           </ViewPane>
           <ViewPane active={view === "flows"} name="flows">
-            <FlowsView onRunFlow={() => setView("chat")} />
+            <FlowsView
+              onRunFlow={(goal) => {
+                setPendingGoal(goal);
+                setView("chat");
+              }}
+            />
           </ViewPane>
           <ViewPane active={view === "live"} name="live">
             <LiveRunView run={liveRun} onRunUpdate={setLiveRun} />

@@ -100,9 +100,13 @@ function TypingIndicator() {
 export function ChatAgentView({
   onRunStarted,
   onOpenLive,
+  pendingGoal,
+  onPendingGoalHandled,
 }: {
   onRunStarted: (run: AgentRun) => void;
   onOpenLive: () => void;
+  pendingGoal?: string | null;
+  onPendingGoalHandled?: () => void;
 }) {
   const [messages, setMessages] = useState<ChatMsg[]>([
     {
@@ -307,6 +311,12 @@ export function ChatAgentView({
       setBusy(false);
     }
   }
+
+  useEffect(() => {
+    if (!pendingGoal || busy) return;
+    void sendMessage(pendingGoal);
+    onPendingGoalHandled?.();
+  }, [pendingGoal, busy, onPendingGoalHandled]);
 
   function handleAction(action: string, run?: AgentRun, payload?: string) {
     if (action === "live") onOpenLive();

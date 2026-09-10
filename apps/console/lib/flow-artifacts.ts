@@ -7,6 +7,7 @@ export type FlowArtifactType = "scenarios" | "test-cases" | "suite" | "scripts";
 export type FlowSummary = {
   id: string;
   name: string;
+  description: string;
   status: string;
   tags: string[];
   scenarioCount: number;
@@ -60,13 +61,29 @@ async function findSpecFiles(flowId: string): Promise<string[]> {
   return out.sort();
 }
 
-async function loadFlowMeta(flowId: string): Promise<{ name: string; status: string }> {
+async function loadFlowMeta(flowId: string): Promise<{ name: string; status: string; description: string }> {
   const metaPath = path.join(META_DIR, `${flowId}.yaml`);
   const doc = await readOptional(metaPath);
-  if (!doc) return { name: flowId, status: "READY" };
+  if (!doc) return { name: flowId, status: "READY", description: "" };
   const name = doc.match(/^flow_name:\s*(.+)$/m)?.[1]?.trim() || flowId;
   const status = doc.match(/^status:\s*(.+)$/m)?.[1]?.trim() || "READY";
-  return { name, status };
+  const purposeBlock = doc.match(/^purpose:\s*\n([\s\S]*?)(?:\n[A-Za-z_]+:|$)/m)?.[1];
+  const description = purposeBlock
+    ? purposeBlock
+        .split("\n")
+        .map((l) => l.trim())
+        .filter(Boolean)
+        .join(" ")
+        .slice(0, 180)
+    : "";
+  return { name, status, description };
+}
+
+function parseSuiteTags(raw: string | null): string[] {
+  if (!raw) return [];
+  const block = raw.match(/^\s*tags:\s*\n([\s\S]*?)(?:\n\s*\w|$)/m);
+  if (!block) return [];
+  return [...block[1].matchAll(/^\s*-\s+(.+)$/gm)].map((m) => m[1].trim());
 }
 
 export async function listApprovedFlows(): Promise<FlowSummary[]> {
@@ -85,8 +102,9 @@ export async function listApprovedFlows(): Promise<FlowSummary[]> {
     flows.push({
       id,
       name: meta.name,
+      description: meta.description,
       status: meta.status,
-      tags: ["@sanity", "@regression"],
+      tags: parseSuiteTags(suiteRaw),
       scenarioCount: scenariosRaw ? countYamlItems(scenariosRaw, "scenarios") : 0,
       testCaseCount: testCasesRaw ? countYamlItems(testCasesRaw, "test_cases") : 0,
       scriptCount: scripts.length,

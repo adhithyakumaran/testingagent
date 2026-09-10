@@ -13,6 +13,7 @@ export async function executeRunInBackground(
   if (opts.headed) {
     process.env.QA_HEADED = "true";
     process.env.EA_HEADLESS = "false";
+    process.env.EA_USE_SYSTEM_CHROME = "true";
   }
 
   await mutateState(async (state) => {
