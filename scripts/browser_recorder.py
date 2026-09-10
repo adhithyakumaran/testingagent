@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ScoutAI Browser Recorder — real interaction capture + live event stream."""
+"""ScoutAI Browser Recorder — real-time suite-authoring capture (locators, DOM, metadata)."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -26,30 +26,51 @@ INTERACTION_INIT_SCRIPT = """
 (() => {
   if (window.__scoutRecorderInstalled) return;
   window.__scoutRecorderInstalled = true;
-  const describe = (el) => {
-    if (!el) return 'unknown';
-    const tag = el.tagName ? el.tagName.toLowerCase() : 'node';
-    const id = el.id ? '#' + el.id : '';
-    const name = el.getAttribute && el.getAttribute('name') ? '[name=' + el.getAttribute('name') + ']' : '';
-    const role = el.getAttribute && el.getAttribute('role') ? '[role=' + el.getAttribute('role') + ']' : '';
-    const testId = el.getAttribute && el.getAttribute('data-testid') ? '[data-testid=' + el.getAttribute('data-testid') + ']' : '';
-    const text = (el.innerText || el.textContent || '').trim().slice(0, 40);
-    return `${tag}${id}${name}${role}${testId}${text ? ':' + text : ''}`;
+
+  const pick = (el, name) => (el && el.getAttribute ? el.getAttribute(name) : null) || '';
+
+  const collectElement = (el) => {
+    if (!el || el.nodeType !== 1) return { tag: 'unknown', attributes: {}, locators: {}, text: '' };
+    const tag = (el.tagName || 'node').toLowerCase();
+    const attrs = {};
+    for (const name of ['id', 'name', 'type', 'role', 'aria-label', 'data-testid', 'placeholder', 'href', 'title', 'class']) {
+      const v = pick(el, name);
+      if (v) attrs[name] = String(v).slice(0, 200);
+    }
+    const text = (el.innerText || el.textContent || '').trim().slice(0, 120);
+    const locators = {};
+    if (el.id) {
+      locators.id = '#' + el.id;
+      if (el.id.startsWith('P')) locators.apexItem = '#' + el.id;
+    }
+    if (pick(el, 'name')) locators.name = `[name="${pick(el, 'name')}"]`;
+    if (pick(el, 'data-testid')) locators.testId = `[data-testid="${pick(el, 'data-testid')}"]`;
+    if (pick(el, 'role')) locators.role = `[role="${pick(el, 'role')}"]`;
+    if (pick(el, 'aria-label')) locators.ariaLabel = `[aria-label="${pick(el, 'aria-label')}"]`;
+    if (text) locators.text = `${tag}:has-text("${text.slice(0, 40).replace(/"/g, "'")}")`;
+    if (pick(el, 'placeholder')) locators.placeholder = `[placeholder="${pick(el, 'placeholder')}"]`;
+    const classList = Array.from(el.classList || []).slice(0, 10);
+    if (classList.length) locators.class = tag + '.' + classList.slice(0, 3).join('.');
+    return {
+      tag,
+      attributes: attrs,
+      text,
+      classList,
+      locators,
+      outerHTML: (el.outerHTML || '').slice(0, 1200),
+    };
   };
-  document.addEventListener('click', (e) => {
-    const sel = describe(e.target);
-    const fallbacks = [sel];
-    if (e.target && e.target.id) fallbacks.push('#' + e.target.id);
-    if (window._scoutRecordClick) window._scoutRecordClick({ action: 'click', selector: sel, fallbacks });
-  }, true);
-  document.addEventListener('input', (e) => {
-    const sel = describe(e.target);
-    if (window._scoutRecordInput) window._scoutRecordInput({ action: 'input', selector: sel, valueLength: (e.target.value || '').length });
-  }, true);
-  document.addEventListener('change', (e) => {
-    const sel = describe(e.target);
-    if (window._scoutRecordInput) window._scoutRecordInput({ action: 'change', selector: sel });
-  }, true);
+
+  const emit = (action, el, extra) => {
+    const element = collectElement(el);
+    const payload = { action, element, selector: element.locators.id || element.locators.name || element.tag, ...extra };
+    if (action === 'click' && window._scoutRecordClick) window._scoutRecordClick(payload);
+    else if (window._scoutRecordInput) window._scoutRecordInput(payload);
+  };
+
+  document.addEventListener('click', (e) => emit('click', e.target, {}), true);
+  document.addEventListener('input', (e) => emit('input', e.target, { valueLength: (e.target.value || '').length }), true);
+  document.addEventListener('change', (e) => emit('change', e.target, {}), true);
 })();
 """
 
@@ -61,13 +82,17 @@ def _session_dir(session_id: str) -> Path:
     return d
 
 
+def _stop_flag(session_id: str) -> Path:
+    return _session_dir(session_id) / "stop.flag"
+
+
 def _load_config(session_id: str) -> dict[str, Any]:
     cfg_path = _session_dir(session_id) / "config.json"
     if cfg_path.exists():
         return json.loads(cfg_path.read_text(encoding="utf-8"))
     return {
-        "console": True,
-        "network": True,
+        "console": False,
+        "network": False,
         "interactions": True,
         "dom_snapshots": True,
         "video": False,
@@ -79,15 +104,20 @@ def _save_config(session_id: str, cfg: dict[str, Any]) -> None:
     (_session_dir(session_id) / "config.json").write_text(json.dumps(cfg, indent=2), encoding="utf-8")
 
 
+def _write_status(session_id: str, payload: dict[str, Any]) -> None:
+    (_session_dir(session_id) / "status.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
 def _append_event(session_id: str, event: dict[str, Any]) -> None:
     path = _session_dir(session_id) / "events.jsonl"
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(event, ensure_ascii=False) + "\n")
+        f.flush()
+        os.fsync(f.fileno())
 
 
 def cmd_status(session_id: str) -> dict[str, Any]:
-    sdir = _session_dir(session_id)
-    status_path = sdir / "status.json"
+    status_path = _session_dir(session_id) / "status.json"
     if status_path.exists():
         return json.loads(status_path.read_text(encoding="utf-8"))
     return {"session_id": session_id, "status": "idle", "events": 0}
@@ -109,7 +139,21 @@ def cmd_events(session_id: str, *, offset: int = 0) -> dict[str, Any]:
     return {"events": events, "offset": offset + len(events), "total": len(lines)}
 
 
-def cmd_record(session_id: str, *, url: str | None = None, max_seconds: int = 120) -> dict[str, Any]:
+def cmd_stop(session_id: str) -> dict[str, Any]:
+    sdir = _session_dir(session_id)
+    _stop_flag(session_id).write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
+    status = cmd_status(session_id)
+    if status.get("status") == "recording":
+        status["stop_requested_at"] = datetime.now(timezone.utc).isoformat()
+        _write_status(session_id, status)
+    return {"ok": True, "session_id": session_id, "status": "stop_requested", "dir": str(sdir.relative_to(ROOT))}
+
+
+def _should_stop(session_id: str) -> bool:
+    return _stop_flag(session_id).exists()
+
+
+def _run_session(session_id: str, *, url: str | None = None, max_seconds: int = 3600) -> dict[str, Any]:
     try:
         from playwright.sync_api import sync_playwright
     except ImportError as exc:
@@ -120,108 +164,178 @@ def cmd_record(session_id: str, *, url: str | None = None, max_seconds: int = 12
     base = os.environ.get("EA_BASE_URL", "https://dev-ea.titanrts.com/ords/r/tjdcom/ea")
     target = url or f"{base.rstrip('/')}/login"
 
-    events: list[dict[str, Any]] = []
-    dom_index = 0
     events_path = sdir / "events.jsonl"
     if events_path.exists():
         events_path.unlink()
+    stop_path = _stop_flag(session_id)
+    if stop_path.exists():
+        stop_path.unlink()
+
+    elements_dir = sdir / "elements"
+    elements_dir.mkdir(parents=True, exist_ok=True)
+    dom_dir = sdir / "dom"
+    dom_dir.mkdir(parents=True, exist_ok=True)
+
+    event_count = 0
+    element_count = 0
+    dom_index = 0
 
     def log_event(kind: str, payload: dict[str, Any]) -> None:
-        event = {"at": datetime.now(timezone.utc).isoformat(), "kind": kind, **payload}
-        events.append(event)
+        nonlocal event_count
+        event_count += 1
+        event = {"id": event_count, "at": datetime.now(timezone.utc).isoformat(), "kind": kind, **payload}
         _append_event(session_id, event)
 
     status = {
         "session_id": session_id,
         "status": "recording",
+        "pid": os.getpid(),
         "started_at": datetime.now(timezone.utc).isoformat(),
         "target_url": target,
         "config": cfg,
         "events": 0,
     }
-    (sdir / "status.json").write_text(json.dumps(status, indent=2), encoding="utf-8")
+    _write_status(session_id, status)
+
+    def persist_element(action: str, meta: dict[str, Any]) -> None:
+        nonlocal element_count, dom_index
+        element = meta.get("element") or {}
+        if not cfg.get("dom_snapshots"):
+            return
+        element_count += 1
+        dom_index += 1
+        stem = f"{action}_{element_count:04d}"
+        elem_path = elements_dir / f"{stem}.json"
+        elem_path.write_text(json.dumps(element, indent=2, ensure_ascii=False), encoding="utf-8")
+        html_path = dom_dir / f"{stem}.html"
+        html_path.write_text(str(element.get("outerHTML") or ""), encoding="utf-8")
+        meta["element_file"] = elem_path.name
+        meta["dom_file"] = html_path.name
+        meta["dom_index"] = dom_index
+
+    def on_click(_src, payload: Any) -> None:
+        meta = payload if isinstance(payload, dict) else {"selector": str(payload)}
+        persist_element("click", meta)
+        log_event("interaction", meta)
+
+    def on_input(_src, payload: Any) -> None:
+        meta = payload if isinstance(payload, dict) else {"selector": str(payload)}
+        persist_element(str(meta.get("action") or "input"), meta)
+        log_event("interaction", meta)
 
     with sync_playwright() as pw:
         channel = "chrome" if os.environ.get("EA_USE_SYSTEM_CHROME", "true").lower() != "false" else None
         headless = os.environ.get("EA_HEADLESS", "false").lower() == "true"
         browser = pw.chromium.launch(headless=headless, channel=channel)
-        context = browser.new_context(record_video_dir=str(sdir / "video") if cfg.get("video") else None)
+        context = browser.new_context()
         page = context.new_page()
 
         if cfg.get("interactions"):
             page.add_init_script(INTERACTION_INIT_SCRIPT)
-
-            def on_click(_src, payload):
-                log_event("interaction", payload if isinstance(payload, dict) else {"selector": str(payload)})
-
-            def on_input(_src, payload):
-                log_event("interaction", payload if isinstance(payload, dict) else {"selector": str(payload)})
-
             page.expose_binding("_scoutRecordClick", on_click)
             page.expose_binding("_scoutRecordInput", on_input)
 
         if cfg.get("console"):
-            page.on("console", lambda msg: log_event("console", {"level": msg.type, "text": msg.text[:500]}))
+            page.on("console", lambda msg: log_event("console", {"level": msg.type, "text": msg.text[:300]}))
 
         if cfg.get("network"):
-            page.on("request", lambda req: log_event("network", {"phase": "request", "url": req.url[:200], "method": req.method}))
-            page.on("response", lambda res: log_event("network", {"phase": "response", "url": res.url[:200], "status": res.status}))
+            page.on(
+                "request",
+                lambda req: log_event("network", {"phase": "request", "url": req.url[:200], "method": req.method}),
+            )
 
-        if cfg.get("session_replay"):
-            context.tracing.start(screenshots=True, snapshots=True, sources=True)
+        def on_nav(frame) -> None:
+            nonlocal dom_index
+            if frame != page.main_frame:
+                return
+            try:
+                log_event(
+                    "navigation",
+                    {
+                        "url": page.url,
+                        "title": page.title(),
+                        "page_alias": _page_alias(page.url),
+                    },
+                )
+                if cfg.get("dom_snapshots"):
+                    dom_index += 1
+                    dom_path = dom_dir / f"nav_{dom_index:04d}.html"
+                    dom_path.write_text(page.content(), encoding="utf-8")
+                    log_event(
+                        "dom_snapshot",
+                        {"reason": "navigation", "dom_file": dom_path.name, "url": page.url, "title": page.title()},
+                    )
+            except Exception as exc:
+                log_event("error", {"phase": "navigation", "message": str(exc)[:200]})
+
+        page.on("framenavigated", on_nav)
 
         page.goto(target, wait_until="domcontentloaded", timeout=60_000)
-        log_event("navigation", {"url": page.url, "title": page.title()})
+        log_event("session_start", {"url": page.url, "title": page.title(), "target": target})
 
         if cfg.get("dom_snapshots"):
             dom_index += 1
-            dom_path = sdir / f"dom_{dom_index:03d}_initial.html"
+            dom_path = dom_dir / f"initial_{dom_index:04d}.html"
             dom_path.write_text(page.content(), encoding="utf-8")
-            shot_path = sdir / f"shot_{dom_index:03d}_initial.png"
-            page.screenshot(path=str(shot_path), fullPage=True)
-            log_event("dom_snapshot", {"index": dom_index, "dom": dom_path.name, "screenshot": shot_path.name, "url": page.url})
+            log_event("dom_snapshot", {"reason": "initial", "dom_file": dom_path.name, "url": page.url})
 
         deadline = time.time() + max_seconds
-        last_snap = time.time()
-        while time.time() < deadline:
-            time.sleep(0.5)
-            status["events"] = len(events)
-            (sdir / "status.json").write_text(json.dumps(status, indent=2), encoding="utf-8")
-            if cfg.get("dom_snapshots") and time.time() - last_snap >= 8:
-                dom_index += 1
-                dom_path = sdir / f"dom_{dom_index:03d}_auto.html"
-                dom_path.write_text(page.content(), encoding="utf-8")
-                shot_path = sdir / f"shot_{dom_index:03d}_auto.png"
-                page.screenshot(path=str(shot_path), fullPage=True)
-                log_event("dom_snapshot", {"index": dom_index, "dom": dom_path.name, "screenshot": shot_path.name, "url": page.url})
-                last_snap = time.time()
-
-        if cfg.get("session_replay"):
-            trace_path = sdir / "trace.zip"
-            context.tracing.stop(path=str(trace_path))
-            log_event("trace", {"path": trace_path.name})
+        while time.time() < deadline and not _should_stop(session_id):
+            status["events"] = event_count
+            _write_status(session_id, status)
+            time.sleep(0.15)
 
         context.close()
         browser.close()
 
+    final_status = "stopped" if _should_stop(session_id) else "completed"
+    if stop_path.exists():
+        stop_path.unlink(missing_ok=True)
+
+    log_event("session_end", {"status": final_status, "events": event_count, "elements": element_count})
+
     status.update(
         {
-            "status": "completed",
+            "status": final_status,
             "finished_at": datetime.now(timezone.utc).isoformat(),
-            "events": len(events),
-            "events_file": str(events_path.relative_to(ROOT)),
+            "events": event_count,
+            "elements_captured": element_count,
+            "events_file": "events.jsonl",
+            "dir": str(sdir.relative_to(ROOT)),
         }
     )
-    (sdir / "status.json").write_text(json.dumps(status, indent=2), encoding="utf-8")
-    return {"ok": True, "session_id": session_id, "events": len(events), "dir": str(sdir.relative_to(ROOT))}
+    _write_status(session_id, status)
+    return {"ok": True, "session_id": session_id, "status": final_status, "events": event_count}
+
+
+def _page_alias(url: str) -> str:
+    try:
+        from plugins.qa_apex.crawler.selectors import parse_apex_url
+
+        parsed = parse_apex_url(url)
+        return str(parsed.page_alias or "")
+    except Exception:
+        return ""
+
+
+def cmd_start(session_id: str, *, url: str | None = None, max_seconds: int = 3600) -> dict[str, Any]:
+    current = cmd_status(session_id)
+    if current.get("status") == "recording":
+        return {"ok": False, "error": "session_already_recording", "session_id": session_id}
+    return _run_session(session_id, url=url, max_seconds=max_seconds)
+
+
+def cmd_record(session_id: str, *, url: str | None = None, max_seconds: int = 120) -> dict[str, Any]:
+    """Blocking record — kept for CLI backward compatibility."""
+    return _run_session(session_id, url=url, max_seconds=max_seconds)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="ScoutAI Browser Recorder")
-    parser.add_argument("command", choices=["status", "configure", "record", "events"])
+    parser.add_argument("command", choices=["status", "configure", "record", "start", "stop", "events"])
     parser.add_argument("--session-id", default="scout-default")
     parser.add_argument("--url", default=None)
-    parser.add_argument("--max-seconds", type=int, default=30)
+    parser.add_argument("--max-seconds", type=int, default=3600)
     parser.add_argument("--offset", type=int, default=0)
     parser.add_argument("--config-json", default="{}")
     args = parser.parse_args()
@@ -233,6 +347,10 @@ def main() -> None:
         result = cmd_configure(args.session_id, cfg)
     elif args.command == "events":
         result = cmd_events(args.session_id, offset=args.offset)
+    elif args.command == "stop":
+        result = cmd_stop(args.session_id)
+    elif args.command == "start":
+        result = cmd_start(args.session_id, url=args.url, max_seconds=args.max_seconds)
     else:
         result = cmd_record(args.session_id, url=args.url, max_seconds=args.max_seconds)
 

@@ -1,27 +1,17 @@
 import { NextResponse } from "next/server";
 import { spawn } from "child_process";
-import path from "path";
-import { repoRoot } from "@/lib/repo-root";
-
-const REPO = repoRoot();
-const SCRIPT = path.join(REPO, "scripts", "browser_recorder.py");
-
-function pythonBin() {
-  return process.platform === "win32" ? "python" : "python3";
-}
+import {
+  pythonBin,
+  recorderEnv,
+  recorderScriptPath,
+  repoRoot,
+} from "@/lib/recorder-paths";
 
 function runPython(args: string[]): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
-    const proc = spawn(pythonBin(), [SCRIPT, ...args], {
-      cwd: REPO,
-      env: {
-        ...process.env,
-        PYTHONPATH: [
-          path.join(REPO, "services", "agent-runtime"),
-          path.join(REPO, "services", "qa-orchestrator"),
-          REPO,
-        ].join(path.delimiter),
-      },
+    const proc = spawn(pythonBin(), [recorderScriptPath(), ...args], {
+      cwd: repoRoot(),
+      env: recorderEnv(),
     });
     let stdout = "";
     let stderr = "";
@@ -45,19 +35,19 @@ function runPython(args: string[]): Promise<Record<string, unknown>> {
   });
 }
 
+function spawnDetached(args: string[]): void {
+  const proc = spawn(pythonBin(), [recorderScriptPath(), ...args], {
+    cwd: repoRoot(),
+    env: recorderEnv(),
+    detached: true,
+    stdio: "ignore",
+  });
+  proc.unref();
+}
+
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const sessionId = url.searchParams.get("sessionId") || "scout-default";
-  const offset = url.searchParams.get("offset");
-
-  if (offset != null) {
-    try {
-      const events = await runPython(["events", "--session-id", sessionId, "--offset", offset]);
-      return NextResponse.json(events);
-    } catch (e) {
-      return NextResponse.json({ events: [], error: e instanceof Error ? e.message : String(e) });
-    }
-  }
 
   try {
     const status = await runPython(["status", "--session-id", sessionId]);
@@ -91,18 +81,30 @@ export async function PUT(req: Request) {
 export async function POST(req: Request) {
   const body = await req.json();
   const sessionId = String(body.sessionId || "scout-default");
-  const maxSeconds = Number(body.maxSeconds || 30);
+  const action = String(body.action || "start");
+  const maxSeconds = Number(body.maxSeconds || 3600);
   const config = body.config || {};
+
   try {
+    if (action === "stop") {
+      const result = await runPython(["stop", "--session-id", sessionId]);
+      return NextResponse.json(result);
+    }
+
     await runPython(["configure", "--session-id", sessionId, "--config-json", JSON.stringify(config)]);
-    const result = await runPython([
-      "record",
+    spawnDetached([
+      "start",
       "--session-id",
       sessionId,
       "--max-seconds",
       String(maxSeconds),
     ]);
-    return NextResponse.json(result);
+    return NextResponse.json({
+      ok: true,
+      sessionId,
+      status: "recording",
+      stream: `/api/recorder/stream?sessionId=${encodeURIComponent(sessionId)}`,
+    });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }
