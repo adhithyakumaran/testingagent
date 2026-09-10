@@ -12,8 +12,14 @@ type ChatMsg = {
   runId?: string;
   run?: AgentRun;
   actions?: { label: string; action: string; payload?: string }[];
-  attachment?: { title: string; pillId?: string };
 };
+
+const SUGGESTIONS = [
+  "Run morning sanity",
+  "List sanity flows",
+  "Test payment flow",
+  "Run full regression",
+];
 
 function uid() {
   return `msg-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
@@ -32,7 +38,9 @@ async function listKnowledge(): Promise<string> {
   const res = await fetch("/api/knowledge");
   const json = await res.json();
   const pills = json.knowledge || [];
-  if (!pills.length) return "No knowledge documents attached yet. Paste requirements or DB notes in chat — I'll ingest them for the next run.";
+  if (!pills.length) {
+    return "No knowledge documents attached yet. Paste requirements or DB notes in chat — I'll ingest them for the next run.";
+  }
   return pills
     .slice(0, 12)
     .map((p: { title: string; format: string; id: string }) => `- **${p.title}** (${p.format}) · \`${p.id}\``)
@@ -44,6 +52,38 @@ function detectLocalIntent(text: string): "sanity_list" | "knowledge_list" | nul
   if (/list.*sanity|sanity flows|show.*sanity|what.*sanity/.test(t)) return "sanity_list";
   if (/list.*doc|knowledge|from the db|fetch.*doc|attached.*doc/.test(t)) return "knowledge_list";
   return null;
+}
+
+function Avatar({ role }: { role: ChatMsg["role"] }) {
+  if (role === "user") {
+    return (
+      <div className="chat-avatar chat-avatar-user" aria-hidden>
+        U
+      </div>
+    );
+  }
+  if (role === "system") {
+    return (
+      <div className="chat-avatar chat-avatar-system" aria-hidden>
+        ·
+      </div>
+    );
+  }
+  return (
+    <div className="chat-avatar chat-avatar-assistant" aria-hidden>
+      S
+    </div>
+  );
+}
+
+function TypingIndicator() {
+  return (
+    <div className="chat-typing" aria-live="polite">
+      <span />
+      <span />
+      <span />
+    </div>
+  );
 }
 
 export function ChatAgentView({
@@ -70,7 +110,7 @@ export function ChatAgentView({
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, busy]);
 
   const pollRun = useCallback(
     (runId: string) => {
@@ -136,9 +176,12 @@ export function ChatAgentView({
     [onRunStarted]
   );
 
-  useEffect(() => () => {
-    if (pollRef.current) clearInterval(pollRef.current);
-  }, []);
+  useEffect(
+    () => () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    },
+    []
+  );
 
   async function ingestAttachment(text: string, title: string): Promise<string | undefined> {
     const res = await fetch("/api/knowledge", {
@@ -266,67 +309,95 @@ export function ChatAgentView({
 
   return (
     <div className="chat-view">
-      <div className="chat-messages">
-        {messages.map((m) => (
-          <div key={m.id} className={`chat-msg ${m.role}`}>
-            <div className="chat-msg-meta">{m.role === "user" ? "You" : m.role === "system" ? "System" : "Scout"}</div>
-            <div className="chat-msg-body">
-              {m.run?.report?.markdown && m.run.status === "completed" ? (
-                <ReportPreview markdown={m.run.report.markdown.slice(0, 6000)} evidence={[]} />
-              ) : (
-                <div className="chat-md" style={{ whiteSpace: "pre-wrap" }}>{m.text}</div>
-              )}
-              {m.actions && (
-                <div className="chat-actions">
-                  {m.actions.map((a) => (
-                    <button
-                      key={a.label}
-                      type="button"
-                      className="chat-cta"
-                      onClick={() => handleAction(a.action, m.run, a.payload)}
-                    >
-                      {a.label}
-                    </button>
-                  ))}
+      <div className="chat-thread">
+        <div className="chat-messages">
+          {messages.map((m) => (
+            <article key={m.id} className={`chat-row ${m.role}`}>
+              <Avatar role={m.role} />
+              <div className="chat-row-content">
+                <div className="chat-msg-meta">
+                  {m.role === "user" ? "You" : m.role === "system" ? "System" : "Scout"}
                 </div>
-              )}
-            </div>
-          </div>
-        ))}
-        {busy && activeRunId && (
-          <div className="chat-msg assistant">
-            <div className="chat-msg-meta">Scout</div>
-            <div className="chat-msg-body chat-typing">Agent running in visible Chrome…</div>
-          </div>
-        )}
-        <div ref={bottomRef} />
+                <div className="chat-msg-bubble">
+                  {m.run?.report?.markdown && m.run.status === "completed" ? (
+                    <div className="chat-report">
+                      <ReportPreview markdown={m.run.report.markdown.slice(0, 6000)} evidence={[]} />
+                    </div>
+                  ) : (
+                    <div className="chat-md" style={{ whiteSpace: "pre-wrap" }}>
+                      {m.text}
+                    </div>
+                  )}
+                </div>
+                {m.actions && (
+                  <div className="chat-msg-actions">
+                    {m.actions.map((a) => (
+                      <button
+                        key={a.label}
+                        type="button"
+                        className={`chat-cta ${a.action === "live" ? "primary" : ""}`}
+                        onClick={() => handleAction(a.action, m.run, a.payload)}
+                      >
+                        {a.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </article>
+          ))}
+
+          {busy && activeRunId && (
+            <article className="chat-row assistant">
+              <Avatar role="assistant" />
+              <div className="chat-row-content">
+                <div className="chat-msg-meta">Scout</div>
+                <div className="chat-msg-bubble">
+                  <TypingIndicator />
+                  <span className="chat-typing-label">Agent running in visible Chrome…</span>
+                </div>
+              </div>
+            </article>
+          )}
+          <div ref={bottomRef} />
+        </div>
       </div>
 
-      <div className="chat-input-row">
-        <textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Ask Scout — run sanity, list flows, test payment, paste new flow requirements…"
-          rows={2}
-          disabled={busy}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              void sendMessage();
-            }
-          }}
-        />
-        <button type="button" className="chat-send" disabled={busy || !input.trim()} onClick={() => void sendMessage()}>
-          Send
-        </button>
-      </div>
+      <div className="chat-composer">
+        <div className="chip-row">
+          {SUGGESTIONS.map((chip) => (
+            <button key={chip} type="button" className="chip" disabled={busy} onClick={() => void sendMessage(chip)}>
+              {chip}
+            </button>
+          ))}
+        </div>
 
-      <div className="chip-row">
-        {["Run morning sanity", "List sanity flows", "Test payment flow", "Run full regression"].map((chip) => (
-          <button key={chip} type="button" className="chip" disabled={busy} onClick={() => void sendMessage(chip)}>
-            {chip}
+        <div className="chat-input-row">
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Message Scout — run sanity, list flows, test payment, paste new flow requirements…"
+            rows={1}
+            disabled={busy}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                void sendMessage();
+              }
+            }}
+          />
+          <button
+            type="button"
+            className="chat-send"
+            disabled={busy || !input.trim()}
+            onClick={() => void sendMessage()}
+            aria-label="Send message"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="18" height="18">
+              <path d="M12 19V5M5 12l7-7 7 7" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
           </button>
-        ))}
+        </div>
       </div>
     </div>
   );

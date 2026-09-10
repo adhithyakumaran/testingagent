@@ -81,7 +81,6 @@ export function ScoutApp() {
 
   const onRunStarted = (run: AgentRun) => {
     setLiveRun(run);
-    setView("live");
   };
 
   let content: ReactNode;
@@ -114,19 +113,25 @@ export function ScoutApp() {
   return (
     <div className="scout-app">
       <aside className="sidebar">
-        <div className="brand">
-          <div className="brand-mark">
-            <svg viewBox="0 0 24 24" fill="none">
-              <path d="M4 12l5 5L20 6" stroke="white" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
+        <div className="sidebar-brand">
+          <div className="sidebar-brand-mark">
+            <svg viewBox="0 0 24 24" fill="none" width="16" height="16">
+              <path
+                d="M4 12l5 5L20 6"
+                stroke="white"
+                strokeWidth="2.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
             </svg>
           </div>
-          <div>
-            <div className="brand-name">Scout</div>
-            <div className="brand-sub">QA Agent Console</div>
+          <div className="sidebar-brand-text">
+            <p className="sidebar-brand-name">Scout</p>
+            <p className="sidebar-brand-sub">QA Agent Console</p>
           </div>
         </div>
 
-        <nav className="nav-group">
+        <nav className="sidebar-nav">
           {NAV.map((item) => (
             <button
               key={item.id}
@@ -135,50 +140,71 @@ export function ScoutApp() {
               onClick={() => setView(item.id)}
             >
               <NavIcon name={item.icon} />
-              {item.label}
-              {item.id === "approvals" && pendingApprovals > 0 && <span className="dot" />}
+              <span className="nav-item-label">{item.label}</span>
+              {item.id === "approvals" && pendingApprovals > 0 && <span className="nav-badge">{pendingApprovals}</span>}
             </button>
           ))}
         </nav>
 
-        <div className="sidebar-foot">
+        <div className="sidebar-footer">
           <div className="credit-bar">
-            <div className="credit-label">Agent runtime · local orchestrator</div>
-            <div className="credit-track">
-              <div className="credit-fill" style={{ width: "62%" }} />
+            <p className="credit-bar-label">Agent runtime</p>
+            <div className="credit-bar-track">
+              <div className="credit-bar-fill" style={{ width: "62%" }} />
             </div>
+            <p className="credit-bar-meta">Local orchestrator connected</p>
           </div>
         </div>
       </aside>
 
       <div className="main">
         <header className="topbar">
-          <div className={`tab ${view === "chat" ? "active" : ""}`} onClick={() => setView("chat")}>
-            Overview
-          </div>
-          {liveRun && (liveRun.status === "running" || liveRun.status === "queued") && (
-            <div className={`tab ${view === "live" ? "active" : ""}`} onClick={() => setView("live")}>
-              <span className="status-chip running" /> Live Run
-            </div>
-          )}
-          <div className="topbar-spacer" />
-          <div className="topbar-icons">
-            <button type="button" className="icon-btn" onClick={() => setShowApprovals((v) => !v)} aria-label="Approvals">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                <path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9zM13.7 21a2 2 0 01-3.4 0" />
-              </svg>
-              {pendingApprovals > 0 && <span className="badge-dot" />}
+          <div className="topbar-tabs">
+            <button
+              type="button"
+              className={`topbar-tab ${view === "chat" ? "active" : ""}`}
+              onClick={() => setView("chat")}
+            >
+              Overview
             </button>
-            <div className="avatar" />
+            {liveRun && (liveRun.status === "running" || liveRun.status === "queued") && (
+              <button
+                type="button"
+                className={`topbar-tab ${view === "live" ? "active" : ""}`}
+                onClick={() => setView("live")}
+              >
+                <span className="status-chip running" />
+                Live Run
+              </button>
+            )}
           </div>
-          {showApprovals && (
-            <div className="approvals-pop open">
-              <ApprovalsView compact onClose={() => setShowApprovals(false)} />
+
+          <div className="topbar-actions">
+            <div className="approvals-popover">
+              <button
+                type="button"
+                className={`icon-btn ${showApprovals ? "active" : ""}`}
+                onClick={() => setShowApprovals((v) => !v)}
+                aria-label="Approvals"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18">
+                  <path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9zM13.7 21a2 2 0 01-3.4 0" />
+                </svg>
+                {pendingApprovals > 0 && <span className="icon-btn-badge">{pendingApprovals}</span>}
+              </button>
+              {showApprovals && (
+                <div className="approvals-popover-panel">
+                  <ApprovalsView compact onClose={() => setShowApprovals(false)} />
+                </div>
+              )}
             </div>
-          )}
+            <div className="topbar-avatar" aria-hidden>
+              S
+            </div>
+          </div>
         </header>
 
-        <div className={`view active view-${view}`}>{content}</div>
+        <div className={`view view-${view}`}>{content}</div>
       </div>
     </div>
   );
