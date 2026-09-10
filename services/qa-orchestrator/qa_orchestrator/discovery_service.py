@@ -12,6 +12,7 @@ from plugins.qa_apex.crawler.persistence import (
     load_latest_snapshot,
     save_snapshot,
 )
+from plugins.qa_apex.crawler.seeds import load_kb_seed_urls
 from qa_orchestrator.flow_kb import YamlFlowKb
 from qa_orchestrator.knowledge_graph import FlowKnowledgeGraph
 from qa_orchestrator.models import DiscoveryResult, IntentClassification, SuiteSelectionPlan
@@ -39,11 +40,18 @@ class DiscoveryService:
         suite_plan: SuiteSelectionPlan,
     ) -> DiscoveryResult:
         seed = self._seed_url(intent, suite_plan)
+        max_pages = int(os.environ.get("QA_CRAWL_MAX_PAGES", str(self.max_pages)))
+        priority = load_kb_seed_urls(
+            self.graph.discovery_root,
+            flow_ids=list(suite_plan.flow_ids or intent.flow_ids) or None,
+        )
         cfg = CrawlConfig(
             seed_url=seed,
-            max_pages=self.max_pages,
+            priority_urls=tuple(priority),
+            max_pages=max_pages,
             dry_run=self.dry_run or not seed,
             headless=os.environ.get("QA_CRAWL_HEADLESS", "true").lower() != "false",
+            harvest_home_cards=os.environ.get("QA_CRAWL_HOME_CARDS", "true").lower() != "false",
         )
         report = ApexCrawler(config=cfg).run()
         report_dict = report.to_dict()

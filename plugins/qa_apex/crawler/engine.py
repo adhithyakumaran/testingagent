@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import time
+from collections import deque
 from dataclasses import asdict, dataclass, field
 from typing import Any, Callable
 from urllib.parse import urlparse
@@ -14,13 +16,15 @@ from plugins.qa_apex.crawler.selectors import (
     same_host,
     with_session,
 )
+from plugins.qa_apex.crawler.seeds import home_card_seed_urls
 from plugins.qa_apex.crawler.session import SessionConfig, login_apex, session_from_env
 
 
 @dataclass
 class CrawlConfig:
     seed_url: str | None = None
-    max_pages: int = 40
+    priority_urls: tuple[str, ...] = ()
+    max_pages: int = 60
     same_url_limit: int = 1
     modal_timeout_ms: int = 3000
     navigation_timeout_ms: int = 45_000
@@ -29,6 +33,7 @@ class CrawlConfig:
     allowed_apps: tuple[str, ...] = ("ea", "ea1", "gc")
     skip_external_hosts: bool = True
     headless: bool = True
+    harvest_home_cards: bool = True
     user_agent: str = (
         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 BaseAgentCrawler/0.2"
@@ -111,7 +116,8 @@ class ApexCrawler:
         visited: dict[str, int] = {}
         pages: list[PageSnapshot] = []
         blockers: list[dict[str, Any]] = []
-        queue: list[str] = []
+        queue: deque[str] = deque()
+        priority_seeds = list(cfg.priority_urls)
         current_session: str | None = None
         host = urlparse(seed).hostname
 
@@ -136,8 +142,13 @@ class ApexCrawler:
             else:
                 queue.append(seed)
 
+            for purl in priority_seeds:
+                queue.appendleft(with_session(purl, current_session) if current_session else purl)
+
+            home_cards_harvested = False
+
             while queue and len(pages) < cfg.max_pages:
-                url = queue.pop(0)
+                url = queue.popleft()
                 key = normalize_page_key(url)
                 if visited.get(key, 0) >= cfg.same_url_limit:
                     continue
@@ -158,11 +169,32 @@ class ApexCrawler:
                     current_session = snap.session
                 pages.append(snap)
 
-                # Extract links
+                if (
+                    cfg.harvest_home_cards
+                    and not home_cards_harvested
+                    and snap.page_alias
+                    and snap.page_alias.lower() == "home"
+                ):
+                    home_cards_harvested = True
+                    try:
+                        card_hrefs = page.eval_on_selector_all(
+                            "a.custom-card-wrap[href], a.t-Card-wrap[href], li.t-Cards-item a[href]",
+                            "els => els.map(e => e.getAttribute('href'))",
+                        )
+                        for card_url in home_card_seed_urls(page.url, card_hrefs or []):
+                            nkey = normalize_page_key(card_url)
+                            if visited.get(nkey, 0) < cfg.same_url_limit:
+                                queue.appendleft(
+                                    with_session(card_url, current_session) if current_session else card_url
+                                )
+                    except Exception:
+                        pass
+
+                # Extract links (anchors + APEX navigation buttons)
                 try:
                     hrefs = page.eval_on_selector_all(
-                        "a[href]",
-                        "els => els.map(e => e.getAttribute('href'))",
+                        "a[href], button[data-url], [data-link]",
+                        """els => els.map(e => e.getAttribute('href') || e.getAttribute('data-url') || e.getAttribute('data-link'))""",
                     )
                 except Exception:
                     hrefs = []
@@ -178,7 +210,7 @@ class ApexCrawler:
                     nkey = normalize_page_key(abs_url)
                     if visited.get(nkey, 0) >= cfg.same_url_limit:
                         continue
-                    if len(pages) + len(queue) >= cfg.max_pages * 3:
+                    if len(pages) + len(queue) >= cfg.max_pages * 4:
                         break
                     # Prefer session-bearing navigation target
                     queue.append(with_session(abs_url, current_session) if current_session else abs_url)
@@ -212,6 +244,8 @@ class ApexCrawler:
                 "truncated": len(pages) >= cfg.max_pages,
                 "elapsed_ms": int((time.monotonic() - started) * 1000),
                 "queue_remaining": len(queue),
+                "priority_seeds": len(priority_seeds),
+                "home_cards_harvested": home_cards_harvested,
             },
             apex={
                 "workspace": next((p.workspace for p in pages if p.workspace), None),

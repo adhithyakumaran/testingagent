@@ -94,22 +94,50 @@ def diff_snapshots(previous: dict[str, Any] | None, current: dict[str, Any]) -> 
 def coverage_metrics(discovery_root: Path, report: dict[str, Any]) -> dict[str, Any]:
     """Estimate KB flow reachability from crawl page aliases."""
     index_path = discovery_root / "flows" / "index.yaml"
-    ready_count = 19
+    ready_ids: list[str] = []
     if index_path.exists():
         try:
             import yaml
 
             data = yaml.safe_load(index_path.read_text(encoding="utf-8"))
-            ready_count = len(data.get("sme_ready") or data.get("flows") or [])
+            ready_ids = list(dict.fromkeys(data.get("sme_ready") or []))
         except Exception:
             pass
 
+    ready_count = len(ready_ids) or 19
     aliases = {str(p.get("page_alias")).lower() for p in (report.get("pages") or []) if p.get("page_alias")}
+
+    matched = 0
+    try:
+        import yaml
+
+        flows_dir = discovery_root / "flows"
+        for fid in ready_ids:
+            meta_path = flows_dir / f"{fid}.yaml"
+            if not meta_path.exists():
+                continue
+            doc = yaml.safe_load(meta_path.read_text(encoding="utf-8")) or {}
+            pages = [str(p).lower() for p in (doc.get("pages") or [])]
+            entry = str((doc.get("entry_point") or {}).get("page") or "").lower()
+            if entry and entry in aliases:
+                matched += 1
+                continue
+            if any(p in aliases for p in pages):
+                matched += 1
+    except Exception:
+        matched = 0
+
+    pct = round(100 * matched / ready_count, 1) if ready_count else 0.0
     return {
         "pages_crawled": len(report.get("pages") or []),
         "unique_aliases": len(aliases),
         "ready_flows_in_kb": ready_count,
-        "coverage_note": f"Crawled {len(aliases)} unique page aliases — compare to {ready_count} READY KB flows",
+        "flows_matched_by_alias": matched,
+        "coverage_percent": pct,
+        "coverage_note": (
+            f"Crawl coverage: {matched}/{ready_count} READY flows ({pct}%) matched by page alias — "
+            f"{len(aliases)} unique aliases observed"
+        ),
     }
 
 
