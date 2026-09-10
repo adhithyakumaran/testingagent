@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { AgentRun } from "@/lib/types";
 import { ReportPreview } from "@/components/report-preview";
 import { classifyChatIntent } from "@/lib/chat-intent";
+import { ScoutMark } from "@/components/scout-mark";
 
 type ChatMsg = {
   id: string;
@@ -82,7 +83,7 @@ function Avatar({ role }: { role: ChatMsg["role"] }) {
   }
   return (
     <div className="chat-avatar chat-avatar-assistant" aria-hidden>
-      S
+      <ScoutMark size={15} />
     </div>
   );
 }
@@ -316,6 +317,8 @@ export function ChatAgentView({
     if (!pendingGoal || busy) return;
     void sendMessage(pendingGoal);
     onPendingGoalHandled?.();
+    // sendMessage is intentionally omitted — only fire when pendingGoal changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingGoal, busy, onPendingGoalHandled]);
 
   function handleAction(action: string, run?: AgentRun, payload?: string) {

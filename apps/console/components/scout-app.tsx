@@ -18,6 +18,7 @@ import { HistoryView } from "@/components/views/history-view";
 import { FlowsView } from "@/components/views/flows-view";
 import { ConnectorsView } from "@/components/views/connectors-view";
 import { ApprovalsView } from "@/components/views/approvals-view";
+import { ScoutMark } from "@/components/scout-mark";
 import type { AgentRun } from "@/lib/types";
 
 export type ScoutView =
@@ -124,7 +125,9 @@ export function ScoutApp() {
     <div className="scout-app">
       <aside className="sidebar">
         <div className="sidebar-brand">
-          <div className="sidebar-brand-mark">S</div>
+          <div className="sidebar-brand-mark">
+            <ScoutMark size={18} />
+          </div>
           <div className="sidebar-brand-text">
             <p className="sidebar-brand-name">Scout</p>
             <p className="sidebar-brand-sub">QA Agent Console</p>
@@ -193,7 +196,7 @@ export function ScoutApp() {
               )}
             </div>
             <div className="topbar-avatar" aria-hidden>
-              S
+              <ScoutMark size={14} />
             </div>
           </div>
         </header>
