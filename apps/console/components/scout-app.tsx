@@ -81,6 +81,9 @@ export function ScoutApp() {
 
   const onRunStarted = (run: AgentRun) => {
     setLiveRun(run);
+    if (run.status === "running" || run.status === "queued") {
+      setView("live");
+    }
   };
 
   let content: ReactNode;

@@ -26,8 +26,8 @@ export function ApprovalsView({ compact, onClose }: { compact?: boolean; onClose
           <span>Pending SME approval</span>
           <span className="mono">{items.length}</span>
         </div>
-        {items.slice(0, 2).map((item) => (
-          <div key={item.flowId} className="ap-item">
+        {items.slice(0, 2).map((item, i) => (
+          <div key={`${item.flowId}-${i}`} className="ap-item">
             <div className="ap-item-title">{item.flowId}</div>
             <div className="ap-item-desc">
               {item.scenarios} scenarios · {item.testCases} test cases — review before @sanity CI promotion.
@@ -49,8 +49,8 @@ export function ApprovalsView({ compact, onClose }: { compact?: boolean; onClose
         <div className="section-title">SME approval queue</div>
       </div>
       <div className="run-list">
-        {items.map((item) => (
-          <div key={item.flowId} className="run-row">
+        {items.map((item, i) => (
+          <div key={`${item.flowId}-${i}`} className="run-row">
             <div className="status-pill running">PENDING</div>
             <div className="run-name">{item.flowId}</div>
             <div className="run-meta">

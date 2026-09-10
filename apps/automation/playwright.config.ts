@@ -29,9 +29,10 @@ export default defineConfig({
   use: {
     baseURL,
     storageState: process.env.EA_USER_USERNAME ? '.auth/user.json' : undefined,
-    trace: 'retain-on-failure',
-    screenshot: 'only-on-failure',
-    video: 'retain-on-failure',
+    headless: process.env.EA_HEADLESS !== 'false',
+    trace: process.env.QA_HEADED === 'true' ? 'on' : 'retain-on-failure',
+    screenshot: process.env.QA_HEADED === 'true' ? 'on' : 'only-on-failure',
+    video: process.env.QA_HEADED === 'true' ? 'on' : 'retain-on-failure',
     actionTimeout: 20_000,
     navigationTimeout: 45_000,
     ignoreHTTPSErrors: process.env.EA_IGNORE_HTTPS_ERRORS === 'true',

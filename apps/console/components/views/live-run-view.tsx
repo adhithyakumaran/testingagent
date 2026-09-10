@@ -50,7 +50,10 @@ export function LiveRunView({
     return (
       <div className="view-empty">
         <h2>Live Runs</h2>
-        <p>Start a test from <strong>Ask Agent</strong> — Scout opens a visible Chrome window and streams steps here.</p>
+        <p>
+          Start a test from <strong>Ask Agent</strong> with an explicit command like <em>run morning sanity</em>.
+          Chrome opens for the test steps — login runs silently in the background.
+        </p>
       </div>
     );
   }
@@ -63,17 +66,17 @@ export function LiveRunView({
 
   return (
     <div className="live-run-view">
-      <div className="run-header">
-        <div className="run-header-left">
-          <h2>{current.goal.slice(0, 80)}</h2>
-          <div className="meta">
+      <div className="view-header">
+        <div>
+          <h2 className="view-title">{current.goal.slice(0, 80)}</h2>
+          <p className="view-subtitle">
             Endless Aisle UAT · <span className="mono">{latestUrl}</span> · {current.conclusion || current.status}
-          </div>
+          </p>
         </div>
-        <div className={`run-progress-pill ${running ? "" : "done"}`}>
+        <div className={`run-status-pill ${running ? "running" : "done"}`}>
           {running ? (
             <>
-              <div className="spinner" /> Running — {current.traces.length} steps logged
+              <span className="status-chip running" /> Running — {current.traces.length} steps
             </>
           ) : (
             <>✓ {current.conclusion || "Complete"}</>
@@ -83,15 +86,15 @@ export function LiveRunView({
 
       <div className="live-split">
         <div className="browser-frame">
-          <div className="browser-chrome">
-            <div className="browser-dots">
+          <div className="browser-frame-chrome">
+            <div className="browser-frame-dots">
               <span />
               <span />
               <span />
             </div>
-            <div className="browser-url mono">{latestUrl}</div>
+            <div className="browser-frame-url mono">{latestUrl}</div>
           </div>
-          <div className="browser-body">
+          <div className="browser-frame-viewport">
             {evidence.length > 0 ? (
               <div className="evidence-strip">
                 {evidence.map((ev) => (
@@ -104,28 +107,33 @@ export function LiveRunView({
               </div>
             ) : (
               <div className="browser-placeholder">
-                <p>{running ? "Chrome window is open on your machine — watch login, navigation, and clicks live." : "Run complete — evidence captures appear here when available."}</p>
+                <p>
+                  {running
+                    ? "Chrome is running the test suite on your machine. Step screenshots appear here as each test captures evidence."
+                    : "Run complete — evidence captures appear here when available."}
+                </p>
               </div>
             )}
           </div>
         </div>
 
         <div className="timeline-panel">
-          <div className="tl-head">EXECUTION STEPS</div>
-          {current.traces.map((t: TraceEvent, i) => (
-            <div
-              key={t.id}
-              className={`tl-step ${i === current.traces.length - 1 && running ? "active" : "done"}`}
-            >
-              <div className="tl-marker">
-                {i === current.traces.length - 1 && running ? <div className="spinner" /> : "✓"}
+          <div className="timeline-panel-head">EXECUTION STEPS</div>
+          <div className="timeline-list">
+            {current.traces.map((t: TraceEvent, i) => (
+              <div
+                key={t.id}
+                className={`timeline-item ${i === current.traces.length - 1 && running ? "pending" : "pass"}`}
+              >
+                <span className="timeline-item-dot" />
+                <div>
+                  <div className="timeline-item-label">{t.message}</div>
+                  {t.detail && <div className="timeline-item-time mono">{t.detail.slice(0, 120)}</div>}
+                </div>
+                <span className="timeline-item-time">{new Date(t.at).toLocaleTimeString()}</span>
               </div>
-              <div className="tl-body">
-                <div className="tl-title">{t.message}</div>
-                {t.detail && <div className="tl-sub mono">{t.detail.slice(0, 120)}</div>}
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       </div>
     </div>

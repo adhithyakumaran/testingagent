@@ -22,12 +22,12 @@ async function globalSetup(config: FullConfig): Promise<void> {
     return;
   }
 
-  const headless = process.env.EA_HEADLESS !== 'false';
-  const browser = await launchUatBrowser(headless);
+  // Auth capture always runs headless so headed test runs don't flash a login window.
+  const browser = await launchUatBrowser(true);
   const context = await newUatContext(browser, baseURL);
   const page = await context.newPage();
   const loginTarget = loginUrl();
-  console.log(`Global setup: login ${loginTarget} as ${user} (headless=${headless})`);
+  console.log(`Global setup: login ${loginTarget} as ${user} (headless=true)`);
 
   try {
     await page.goto(loginTarget, { waitUntil: 'load', timeout: 90_000 });

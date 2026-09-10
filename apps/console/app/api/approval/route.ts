@@ -17,7 +17,7 @@ export async function GET() {
   const flows: { flowId: string; status: string; scenarios: string; testCases: string; scripts: string }[] = [];
   try {
     const indexRaw = await fs.readFile(FLOWS_INDEX, "utf8");
-    for (const flowId of extractSmeReady(indexRaw)) {
+    for (const flowId of [...new Set(extractSmeReady(indexRaw))]) {
       const designDir = path.join(DESIGN, flowId);
       let scenarios = "0";
       let testCases = "0";

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AgentRun } from "@/lib/types";
 import { ReportPreview } from "@/components/report-preview";
+import { classifyChatIntent } from "@/lib/chat-intent";
 
 type ChatMsg = {
   id: string;
@@ -25,14 +26,18 @@ function uid() {
   return `msg-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
-async function listSanityFlows(): Promise<string> {
-  const res = await fetch("/api/flows?tag=sanity");
+async function listFlows(tag?: string): Promise<string> {
+  const url = tag ? `/api/flows?tag=${encodeURIComponent(tag)}` : "/api/flows";
+  const res = await fetch(url);
   const json = await res.json();
-  const lines = (json.flows || []).map(
-    (f: { id: string; name: string }) => `- **${f.id}** — ${f.name}`
+  const flows = json.flows || [];
+  const label = tag === "sanity" ? "sanity-ready flows" : "automation flows";
+  const lines = flows.map((f: { id: string; name: string; status?: string }) =>
+    `- **${f.id}** — ${f.name}${f.status ? ` (${f.status})` : ""}`
   );
-  return `Here are the **${lines.length} sanity-ready flows**:\n\n${lines.join("\n")}\n\nSay *run morning sanity* or *test payment flow* to execute.`;
+  return `Here are the **${flows.length} ${label}** I can run:\n\n${lines.join("\n")}\n\nAsk me to **run morning sanity**, **test payment flow**, or **run BF-LOGIN-001** when you want execution — listing flows never starts a test.`;
 }
+
 
 async function listKnowledge(): Promise<string> {
   const res = await fetch("/api/knowledge");
@@ -47,11 +52,17 @@ async function listKnowledge(): Promise<string> {
     .join("\n");
 }
 
-function detectLocalIntent(text: string): "sanity_list" | "knowledge_list" | null {
-  const t = text.toLowerCase();
-  if (/list.*sanity|sanity flows|show.*sanity|what.*sanity/.test(t)) return "sanity_list";
-  if (/list.*doc|knowledge|from the db|fetch.*doc|attached.*doc/.test(t)) return "knowledge_list";
-  return null;
+function helpReply(): string {
+  return [
+    "I can help with:",
+    "",
+    "- **List flows** — e.g. *what flows do you have?*",
+    "- **Run tests** — e.g. *run morning sanity* or *test payment flow*",
+    "- **Attach requirements** — paste a long feature description and I'll ingest it",
+    "- **Knowledge docs** — *list knowledge*",
+    "",
+    "Listing or asking questions never starts a browser. Only explicit **run / test / execute** commands do.",
+  ].join("\n");
 }
 
 function Avatar({ role }: { role: ChatMsg["role"] }) {
@@ -202,9 +213,9 @@ export function ChatAgentView({
     const userMsg: ChatMsg = { id: uid(), role: "user", text, at: new Date().toISOString() };
     setMessages((prev) => [...prev, userMsg]);
 
-    const local = detectLocalIntent(text);
-    if (local === "sanity_list") {
-      const reply = await listSanityFlows();
+    const intent = classifyChatIntent(text);
+    if (intent.kind === "list_flows") {
+      const reply = await listFlows(intent.tag);
       setMessages((prev) => [
         ...prev,
         { id: uid(), role: "assistant", text: reply, at: new Date().toISOString() },
@@ -212,11 +223,19 @@ export function ChatAgentView({
       setBusy(false);
       return;
     }
-    if (local === "knowledge_list") {
+    if (intent.kind === "list_knowledge") {
       const reply = await listKnowledge();
       setMessages((prev) => [
         ...prev,
         { id: uid(), role: "assistant", text: reply, at: new Date().toISOString() },
+      ]);
+      setBusy(false);
+      return;
+    }
+    if (intent.kind === "help") {
+      setMessages((prev) => [
+        ...prev,
+        { id: uid(), role: "assistant", text: helpReply(), at: new Date().toISOString() },
       ]);
       setBusy(false);
       return;
@@ -267,7 +286,7 @@ export function ChatAgentView({
         {
           id: uid(),
           role: "assistant",
-          text: `Starting **${run.type}** run — opening Chrome on your machine.\n\nGoal: ${text}\n\nI'll stream progress here and in **Live Runs**.`,
+          text: `Starting **${run.type}** run — Chrome will open for the **test steps** (login happens silently in the background).\n\nGoal: ${text}\n\nWatch progress here or open **Live Runs** for step-by-step screenshots.`,
           at: new Date().toISOString(),
           runId: run.id,
           run,
