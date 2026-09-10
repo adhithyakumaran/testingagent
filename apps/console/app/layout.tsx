@@ -1,22 +1,27 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { IBM_Plex_Mono, Instrument_Sans } from "next/font/google";
 import "./globals.css";
 
-const body = Inter({
+const body = Instrument_Sans({
   subsets: ["latin"],
   variable: "--font-body",
 });
 
+const mono = IBM_Plex_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  variable: "--font-mono",
+});
+
 export const metadata: Metadata = {
-  title: "ScoutAI · Enterprise QA Console",
-  description:
-    "ScoutAI enterprise QA console — high-clarity intent classification, Playwright evidence capture, and exportable reports.",
+  title: "Scout · QA Agent Console",
+  description: "Enterprise QA agent — chat, live runs, recorder, and suite authoring.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body className={`${body.variable} antialiased`}>{children}</body>
+      <body className={`${body.variable} ${mono.variable} antialiased`}>{children}</body>
     </html>
   );
 }

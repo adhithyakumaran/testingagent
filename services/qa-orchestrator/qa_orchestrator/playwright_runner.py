@@ -107,6 +107,9 @@ class PlaywrightRunner:
             )
 
         env = _enrich_path(os.environ.copy())
+        if os.environ.get("QA_HEADED", "").lower() in {"1", "true", "yes"}:
+            env["EA_HEADLESS"] = "false"
+            env["EA_USE_SYSTEM_CHROME"] = "true"
         for key, value in (params or {}).items():
             env[f"QA_PARAM_{str(key).upper()}"] = str(value)
 

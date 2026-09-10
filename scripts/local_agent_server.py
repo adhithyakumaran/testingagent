@@ -171,6 +171,9 @@ class Handler(BaseHTTPRequestHandler):
         context_packets = body.get("context_packets") if isinstance(body.get("context_packets"), list) else []
         skip_discovery = bool(body.get("skip_discovery"))
         skip_execution = bool(body.get("skip_execution"))
+        if body.get("headed"):
+            os.environ["QA_HEADED"] = "true"
+            os.environ["EA_HEADLESS"] = "false"
         try:
             result = SERVICE.run(
                 goal,

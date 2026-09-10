@@ -1,5 +1,5 @@
-import { QaConsole } from "@/components/qa-console";
+import { ScoutApp } from "@/components/scout-app";
 
 export default function Home() {
-  return <QaConsole />;
+  return <ScoutApp />;
 }

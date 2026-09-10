@@ -38,7 +38,7 @@ function extractPills(pills: KnowledgePill[]) {
 
 async function invokeWarmAgent(
   goal: string,
-  opts: { runType: string; model: string; contextPackets: Record<string, unknown>[] }
+  opts: { runType: string; model: string; contextPackets: Record<string, unknown>[]; headed?: boolean }
 ): Promise<{
   ok: boolean;
   result?: Record<string, unknown>;
@@ -54,6 +54,7 @@ async function invokeWarmAgent(
         run_type: opts.runType,
         model: opts.model === "disabled" ? null : opts.model,
         context_packets: opts.contextPackets,
+        headed: opts.headed === true,
       }),
       signal: AbortSignal.timeout(120_000),
     });
@@ -76,7 +77,7 @@ async function invokeWarmAgent(
 
 async function invokePythonAgentSpawn(
   goal: string,
-  opts: { runType: string; model: string }
+  opts: { runType: string; model: string; headed?: boolean }
 ): Promise<{
   ok: boolean;
   result?: Record<string, unknown>;
@@ -104,6 +105,7 @@ async function invokePythonAgentSpawn(
         LLM_ENABLED: opts.model === "disabled" ? "false" : "true",
         QA_DISCOVERY_ROOT: path.join(REPO_ROOT, "data", "discovery-kb"),
         QA_AUTOMATION_DIR: path.join(REPO_ROOT, "apps", "automation"),
+        ...(opts.headed ? { QA_HEADED: "true", EA_HEADLESS: "false", EA_USE_SYSTEM_CHROME: "true" } : {}),
         PYTHONPATH: [
           path.join(REPO_ROOT, "services", "agent-runtime"),
           path.join(REPO_ROOT, "services", "qa-orchestrator"),
@@ -146,7 +148,7 @@ async function invokePythonAgentSpawn(
 
 async function invokePythonAgent(
   goal: string,
-  opts: { runType: string; model: string; contextPackets: Record<string, unknown>[] }
+  opts: { runType: string; model: string; contextPackets: Record<string, unknown>[]; headed?: boolean }
 ) {
   const warm = await invokeWarmAgent(goal, opts);
   if (warm.ok) return warm;
@@ -156,7 +158,8 @@ async function invokePythonAgent(
 export async function executeRun(
   run: AgentRun,
   pills: KnowledgePill[],
-  onUpdate: (run: AgentRun) => Promise<void>
+  onUpdate: (run: AgentRun) => Promise<void>,
+  opts?: { headed?: boolean }
 ): Promise<AgentRun> {
   const push = async (kind: TraceEvent["kind"], message: string, detail?: string) => {
     run.traces.push({
@@ -213,6 +216,7 @@ export async function executeRun(
     runType: run.type === "scheduled" ? "sanity" : run.type,
     model: run.model,
     contextPackets,
+    headed: opts?.headed,
   });
   await push("info", `Orchestrator bridge via ${invoked.via || "unknown"}`);
 

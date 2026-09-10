@@ -69,7 +69,26 @@ function locatorTags(ev: RecorderEvent): string[] {
     .map(([k, v]) => `${k}: ${v}`);
 }
 
-export function BrowserRecorderPanel() {
+function formatTime(iso?: string) {
+  if (!iso) return "00:00.0";
+  const d = new Date(iso);
+  return d.toISOString().slice(11, 19);
+}
+
+function terminalLine(ev: RecorderEvent): { tag: string; tagClass: string; text: string } {
+  if (ev.kind === "interaction") {
+    const locs = ev.element?.locators || {};
+    const sel = locs.id || locs.apexItem || locs.name || ev.selector || ev.element?.tag || "element";
+    return { tag: "[click]", tagClass: "click", text: sel };
+  }
+  if (ev.kind === "navigation") return { tag: "[nav]", tagClass: "dom", text: ev.url || ev.title || "page" };
+  if (ev.kind === "dom_snapshot") return { tag: "[dom]", tagClass: "dom", text: ev.dom_file || "snapshot" };
+  if (ev.kind === "session_start") return { tag: "[start]", tagClass: "dom", text: ev.url || "session" };
+  if (ev.kind === "session_end") return { tag: "[end]", tagClass: "dom", text: `events=${ev.events ?? 0}` };
+  return { tag: `[${ev.kind}]`, tagClass: "console", text: ev.selector || ev.title || "" };
+}
+
+export function BrowserRecorderPanel({ layout = "panel" }: { layout?: "panel" | "terminal" }) {
   const [config, setConfig] = useState<RecorderConfig>(DEFAULT_CONFIG);
   const [sessionId] = useState(() => `scout-${Date.now().toString(36)}`);
   const [recording, setRecording] = useState(false);
@@ -176,6 +195,73 @@ export function BrowserRecorderPanel() {
     } catch (e) {
       setMessage(e instanceof Error ? e.message : String(e));
     }
+  }
+
+  if (layout === "terminal") {
+    return (
+      <div className="rec-split">
+        <div className="terminal">
+          <div className="terminal-head">
+            <div className="rec-dot" />
+            <span>
+              {sessionId} · {recording ? "recording" : status} · {liveEvents.length} events
+            </span>
+          </div>
+          <div className="terminal-body">
+            {liveEvents
+              .filter((ev) => ev.kind !== "connected")
+              .slice(-40)
+              .map((ev, i) => {
+                const line = terminalLine(ev);
+                return (
+                  <div key={`${ev.id ?? ev.at}-${i}`} className="t-line">
+                    <span className="t-time">{formatTime(ev.at)}</span>
+                    <span className={`t-tag ${line.tagClass}`}>{line.tag}</span>
+                    <span className="t-text">{line.text}</span>
+                  </div>
+                );
+              })}
+            {liveEvents.length === 0 && (
+              <div className="t-line">
+                <span className="t-time">--:--</span>
+                <span className="t-tag dom">[ready]</span>
+                <span className="t-text">Start capture — events stream here in real time</span>
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="rec-side">
+          <div className="rec-controls">
+            <h3>Capture</h3>
+            <div className="rec-actions-inline">
+              <button type="button" className="chat-cta" disabled={recording} onClick={startSession}>
+                Start
+              </button>
+              <button type="button" className="ap-btn reject" disabled={!recording} onClick={stopSession}>
+                Stop
+              </button>
+            </div>
+            <div className="toggle-row">
+              Interactions + locators
+              <button
+                type="button"
+                className={`switch ${config.interactions ? "" : "off"}`}
+                onClick={() => void saveConfig({ ...config, interactions: !config.interactions })}
+              />
+            </div>
+            <div className="toggle-row">
+              DOM on click/nav
+              <button
+                type="button"
+                className={`switch ${config.dom_snapshots ? "" : "off"}`}
+                onClick={() => void saveConfig({ ...config, dom_snapshots: !config.dom_snapshots })}
+              />
+            </div>
+          </div>
+          {message && <p className="scout-rec-msg">{message}</p>}
+        </div>
+      </div>
+    );
   }
 
   return (
