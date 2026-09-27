@@ -1,0 +1,49 @@
+{
+  "id": "gt-bf-home-010-01-positive",
+  "status": "pending_sme_approval",
+  "subject": "item search",
+  "flow_id": "BF-HOME-010-01",
+  "test_case_id": "TC-BF-HOME-010-01-P01",
+  "tags": [
+    "BF-HOME-010-01",
+    "bf-home-010-01",
+    "item search",
+    "Item Search",
+    "product search",
+    "TC-BF-HOME-010-01-P01",
+    "SC-BF-HOME-010-01-001"
+  ],
+  "description": "Draft GT: Home Item Search card → Product Search (page 6) → valid runtime item code search → populated product result verified (TC-BF-HOME-010-01-P01).",
+  "business_contract": [
+    "User is authenticated and Home is reachable before Item Search (test preconditions; login is a separate flow).",
+    "From Home, Item Search opens Product Search (flow business_flow steps 1–2; observed_scenarios Home → Item Search).",
+    "Product Search page is ready (Playwright productSearchPage.expectPageReady).",
+    "Item Code input P6_SKU accepts the runtime item code (flow expected_success.search; observed Enter 14-character item code).",
+    "Search is submitted via the Search action (flow business_flow steps 5–6; observed Item Code → Search).",
+    "A populated product result is displayed for the searched item (flow business_flow step 7; test-cases expected_result.product_result).",
+    "Product identity is verified against the runtime item code (Playwright searchAndVerifyProduct → PRODUCT_SEARCH_TRACE:result_verified).",
+    "Evidence capture product-search-result-visible is produced on successful P01 (BF-HOME-010-01.spec.ts attachEvidence)."
+  ],
+  "parameterization": {
+    "item_code_source": "EA_VALID_ITEM_CODE or QA_PARAM_SKU / validated_parameters.sku",
+    "env_keys": ["EA_VALID_ITEM_CODE", "QA_PARAM_SKU"],
+    "notes": "GT does not store literal SKU values. LIVE run used runtime parameter (e.g. SKU 552811DUDABA00 in goal) resolved to suite env, not embedded here."
+  },
+  "expectations": {
+    "execution_ok": true,
+    "min_passed_tests": 1,
+    "require_product_search_verified": true
+  },
+  "evidence_basis": {
+    "flow_kb": "data/discovery-kb/flows/BF-HOME-010-01.yaml",
+    "test_design": "apps/automation/test-design/flows/BF-HOME-010-01/test-cases.yaml#TC-BF-HOME-010-01-P01",
+    "playwright_spec": "apps/automation/tests/home/BF-HOME-010-01.spec.ts",
+    "reference_run_id": "run_9xfoc6qqx93n",
+    "reference_run_notes": "Successful LIVE_DEMO: 1 selected test (P01), 4 evidence captures; validator NEEDS_REVIEW pre_gt_honest until this GT is SME-approved."
+  },
+  "approval": {
+    "state": "pending_sme_approval",
+    "approver_role": "SME Reviewer",
+    "approve_command": "python scripts/approve-ground-truth.py gt-bf-home-010-01-positive --approver \"SME Reviewer\""
+  }
+}
