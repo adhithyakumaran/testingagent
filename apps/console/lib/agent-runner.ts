@@ -4,10 +4,68 @@ import type { AgentRun, KnowledgePill, TraceEvent } from "@/lib/types";
 import { repoRoot } from "@/lib/repo-root";
 import { internalAgentHeaders } from "@/lib/internal-agent";
 import { applyOrchestratorResultToRun, enrichWaitingRunFromAgent } from "@/lib/orchestrator-bridge";
+import { shouldSkipDuplicateOrchestration } from "@/lib/run-execution-guard";
+import { emitRunSubmitDiagnostic } from "@/lib/run-submit-diagnostics";
 import { uid } from "@/lib/utils";
 
 const REPO_ROOT = repoRoot();
 const LOCAL_AGENT_URL = process.env.LOCAL_AGENT_URL || "http://127.0.0.1:43124";
+
+const AGENT_TERMINAL = new Set(["COMPLETED", "FAILED", "BLOCKED", "NEEDS_REVIEW", "PASS", "FAIL"]);
+
+function agentSnapshotToResult(body: Record<string, unknown>): Record<string, unknown> {
+  return {
+    conclusion: body.final_result || body.status,
+    reason_code: body.reason_code,
+    summary: body.summary,
+    decision_diagnostics: body.decision_diagnostics,
+    metadata: { decision_diagnostics: body.decision_diagnostics, run_id: body.run_id },
+    agent: body,
+    local: {
+      execution_mode: process.env.NEXT_PUBLIC_QA_EXECUTION_MODE || "LIVE_DEMO",
+      classifier: "warm_agent_recovered",
+    },
+  };
+}
+
+async function probeWarmAgentRun(runId: string): Promise<Record<string, unknown> | null> {
+  try {
+    const res = await fetchInternalAgent(`/agent/${encodeURIComponent(runId)}`, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (res.status === 404) return null;
+    if (!res.ok) return { _probe: "unreachable" };
+    return (await res.json()) as Record<string, unknown>;
+  } catch {
+    return { _probe: "unreachable" };
+  }
+}
+
+async function recoverWarmAgentResult(
+  runId: string,
+  opts: { goal: string; runType: string; model: string; executionMode?: string }
+): Promise<{ ok: boolean; result?: Record<string, unknown>; error?: string; via?: string } | null> {
+  const deadline = Date.now() + 120_000;
+  while (Date.now() < deadline) {
+    const body = await probeWarmAgentRun(runId);
+    if (!body) return null;
+    if (body._probe === "unreachable") {
+      await new Promise((r) => setTimeout(r, 2_000));
+      continue;
+    }
+    const status = String(body.status || "");
+    if (AGENT_TERMINAL.has(status)) {
+      return { ok: true, result: agentSnapshotToResult(body), via: "warm-recovered" };
+    }
+    await new Promise((r) => setTimeout(r, 2_000));
+  }
+  return {
+    ok: false,
+    error: "warm_agent_active_but_result_not_ready",
+    via: "warm-recover-timeout",
+  };
+}
 
 function extractPills(pills: KnowledgePill[]) {
   return pills.map((p) => {
@@ -174,6 +232,32 @@ async function invokePythonAgent(
 ) {
   const warm = await invokeWarmAgent(goal, opts);
   if (warm.ok) return warm;
+
+  if (opts.runId) {
+    const probe = await probeWarmAgentRun(opts.runId);
+    if (probe && !probe._probe) {
+      const recovered = await recoverWarmAgentResult(opts.runId, {
+        goal,
+        runType: opts.runType,
+        model: opts.model,
+        executionMode: opts.executionMode,
+      });
+      if (recovered?.ok) return recovered;
+      return {
+        ok: false,
+        error: recovered?.error || "warm_agent_still_running",
+        via: recovered?.via || "warm",
+      };
+    }
+    if (probe && probe._probe === "unreachable") {
+      return {
+        ok: false,
+        error: "warm_agent_unreachable_without_duplicate_spawn",
+        via: "warm",
+      };
+    }
+  }
+
   return invokePythonAgentSpawn(goal, opts);
 }
 
@@ -182,6 +266,11 @@ export async function executeRun(
   pills: KnowledgePill[],
   onUpdate: (run: AgentRun) => Promise<void>
 ): Promise<AgentRun> {
+  if (shouldSkipDuplicateOrchestration(run)) {
+    emitRunSubmitDiagnostic("PLAYWRIGHT_END", `run_id=${run.id} skipped_duplicate=true`);
+    return run;
+  }
+
   const push = async (kind: TraceEvent["kind"], message: string, detail?: string) => {
     run.traces.push({
       id: uid("tr"),
@@ -234,6 +323,7 @@ export async function executeRun(
       : run.goal;
 
   await push("tool", "Planning → executing → validating", agentGoal);
+  emitRunSubmitDiagnostic("PLAYWRIGHT_START", `run_id=${run.id}`);
   const invoked = await invokePythonAgent(agentGoal, {
     runType: run.type === "scheduled" ? "sanity" : run.type,
     model: run.model,
@@ -242,6 +332,7 @@ export async function executeRun(
     executionMode: run.executionMode,
   });
   await push("info", `Orchestrator bridge via ${invoked.via || "unknown"}`);
+  emitRunSubmitDiagnostic("PLAYWRIGHT_END", `run_id=${run.id} via=${invoked.via || "unknown"} ok=${invoked.ok}`);
 
   if (invoked.ok && invoked.result) {
     applyOrchestratorResultToRun(run, invoked.result, run.traces);
@@ -314,6 +405,7 @@ export async function executeRun(
   }
 
     await push("report", "Report generated");
+    emitRunSubmitDiagnostic("REPORT_FINALIZED", `run_id=${run.id}`);
     run.updatedAt = new Date().toISOString();
     await onUpdate(run);
     return run;

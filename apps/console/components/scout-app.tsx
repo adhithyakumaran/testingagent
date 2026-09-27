@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import {
   Activity,
   CheckSquare,
@@ -82,12 +82,14 @@ export function ScoutApp() {
   const [chatRunId, setChatRunId] = useState<string | null>(null);
   const [notifyChannels] = useState(["email", "whatsapp"]);
   const { status: orchestrator } = useOrchestratorStatus();
+  const submitInFlightRef = useRef(false);
 
   useLatestRunSync(activeRun, setActiveRun);
 
   const runAgent = useCallback(
     async (goal: string, type: "adhoc" | "sanity" = "adhoc") => {
-      if (busy) return;
+      if (busy || submitInFlightRef.current) return;
+      submitInFlightRef.current = true;
       setBusy(true);
       setError(null);
       try {
@@ -101,6 +103,7 @@ export function ScoutApp() {
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
       } finally {
+        submitInFlightRef.current = false;
         setBusy(false);
       }
     },

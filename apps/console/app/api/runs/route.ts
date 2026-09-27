@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { executeRun } from "@/lib/agent-runner";
 import { deliverReport } from "@/lib/notify";
 import { requireApiAuth, requireMutationAuth } from "@/lib/api-auth";
+import { shouldSkipDuplicateOrchestration } from "@/lib/run-execution-guard";
 import { hasActiveRun, mutateState, pushHistory, readState, reconcileStoredRunLocks } from "@/lib/store";
 import type { AgentRun } from "@/lib/types";
 import { uid } from "@/lib/utils";
@@ -70,7 +71,12 @@ export async function POST(req: Request) {
     };
     runId = run.id;
     state.runs = [run, ...state.runs].slice(0, 100);
-    pushHistory(state, `Started ${type}: ${goal.slice(0, 80)}`, "client", { runId, goal, executionMode });
+    pushHistory(state, `Started ${type}: ${goal.slice(0, 80)}`, "client", {
+      runId,
+      goal,
+      executionMode,
+      phase: "RUN_CREATED",
+    });
   });
 
   if (!runId) {
@@ -90,11 +96,23 @@ export async function POST(req: Request) {
           const ids = [...new Set([...(knowledgeIds || []), ...(run.knowledgePillIds || [])])];
           const pills = state.knowledge.filter((k) => ids.includes(k.id));
           run.knowledgePillIds = ids;
+          const alreadyOrchestrated = shouldSkipDuplicateOrchestration(run);
           try {
-            run = await executeRun(run, pills, async (updated) => {
-              const i = state.runs.findIndex((r) => r.id === updated.id);
-              if (i >= 0) state.runs[i] = updated;
-            });
+            if (!alreadyOrchestrated) {
+              run = await executeRun(run, pills, async (updated) => {
+                const i = state.runs.findIndex((r) => r.id === updated.id);
+                if (i >= 0) state.runs[i] = updated;
+              });
+            } else {
+              run.traces.push({
+                id: uid("tr"),
+                at: new Date().toISOString(),
+                kind: "info",
+                message: "Skipped duplicate orchestration — run already executed",
+                detail: runId,
+              });
+              run.updatedAt = new Date().toISOString();
+            }
           } catch (err) {
             if (run.status === "running" || run.status === "queued" || run.status === "resuming") {
               run.status = "failed";
@@ -131,6 +149,7 @@ export async function POST(req: Request) {
           pushHistory(state, `Finished ${run.status}: ${run.conclusion}`, "agent", {
             runId,
             conclusion: run.conclusion,
+            phase: "REPORT_FINALIZED",
           });
         });
         return;
