@@ -55,12 +55,14 @@ def load_live_browser_config() -> LiveBrowserConfig:
         delay = 0
     elif run_mode == "LIVE_DEMO":
         headless = False
-        keep_open = True
+        # Normal Ask Agent QA runs close the browser once after the full run.
+        # Set QA_KEEP_BROWSER_OPEN=true only for live inspection / debugging.
+        keep_open = _truthy("QA_KEEP_BROWSER_OPEN", "false")
         channel = os.environ.get("QA_BROWSER_CHANNEL", "chrome")
         delay = int(os.environ.get("QA_LIVE_ACTION_DELAY_MS", "500") or "500")
     elif run_mode == "LIVE":
         headless = _truthy("QA_BROWSER_HEADLESS", "false")
-        keep_open = _truthy("QA_KEEP_BROWSER_OPEN", "true")
+        keep_open = _truthy("QA_KEEP_BROWSER_OPEN", "false")
         channel = os.environ.get("QA_BROWSER_CHANNEL", "chrome")
         delay = int(os.environ.get("QA_LIVE_ACTION_DELAY_MS", "0") or "0")
     else:

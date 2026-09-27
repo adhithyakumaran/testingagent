@@ -127,7 +127,7 @@ def test_live_demo_config_regression(monkeypatch: pytest.MonkeyPatch):
     assert cfg.run_mode == "LIVE_DEMO"
     assert cfg.is_live is True
     assert cfg.headless is False
-    assert cfg.keep_browser_open is True
+    assert cfg.keep_browser_open is False
 
 
 def test_console_api_auth_core_production_fail_closed():

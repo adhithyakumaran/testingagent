@@ -521,6 +521,13 @@ class ControlledAgentLoop:
                     failed_checks=[state.reason_code or "approval.pending"],
                 )
             )
+        try:
+            from qa_orchestrator.live_browser_finalize import finalize_live_browser_after_agent_run
+
+            finalize_live_browser_after_agent_run(state.run_id)
+        except ImportError:
+            pass
+
         orchestrator_result = self._to_orchestrator_result(state, req)
         metrics = metrics_from_single_run(
             AgentRunResult(

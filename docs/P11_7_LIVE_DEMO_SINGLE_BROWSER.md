@@ -22,12 +22,14 @@ ScoutAI run
        • else launchPersistentContext (once) OR LIVE_BROWSER_STALE error
   → ensureRunScopedLogin() once (login_count++)
   → tests reuse session; authenticatedPage skips re-login when isLiveSessionAuthenticated()
-  → terminal run state
-  → Chrome stays open (keeper + close.signal)
-  → explicit Close Browser
+  → evidence/report on disk
+  → worker `liveContext` teardown closes browser once (`browser_close_count=1`)
+  → orchestrator persists final run state and marks session `CLOSED`
 ```
 
-`QA_KEEP_BROWSER_OPEN=true` is unchanged. No automatic browser close after tests. No 120s teardown wait on `close.signal`.
+**Normal Ask Agent QA:** `QA_KEEP_BROWSER_OPEN` defaults to **false** — browser closes automatically after the full run.
+
+**Inspection / debugging only:** set `QA_KEEP_BROWSER_OPEN=true` to leave Chrome open (keeper + manual Close Browser via `close.signal`).
 
 ## Code changes
 
@@ -67,6 +69,7 @@ Never includes passwords, cookies, tokens, or auth storage.
 | browser_launch_count | 1 |
 | context_launch_count | 1 |
 | login_count | 1 |
+| browser_close_count | 1 |
 | selected_test_count | 1 |
 
 ## Tests

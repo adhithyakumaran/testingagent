@@ -464,14 +464,6 @@ class PlaywrightRunner:
                     meta["browser_status"] = "BROWSER_DISCONNECTED"
                 else:
                     meta["browser_status"] = "LIVE"
-                if live_cfg.keep_browser_open:
-                    meta["browser_keep_open"] = True
-                    get_event_store(self._run_id).emit(
-                        phase="COMPLETE",
-                        action="KEEP_OPEN",
-                        status="OK" if ok else "FAIL",
-                        value_summary="Browser remains open for inspection.",
-                    )
                 profile_path = Path(env.get("QA_LIVE_PROFILE_DIR", ""))
                 if profile_path.is_dir() and self._run_id:
                     diag = empty_live_diagnostics(run_id=self._run_id, commands_count=1)
@@ -481,6 +473,27 @@ class PlaywrightRunner:
                         diag["selected_test_count"] = test_count
                     diag = merge_session_diagnostics(profile_path, diag)
                     meta["live_diagnostics"] = diag
+                if live_cfg.keep_browser_open:
+                    meta["browser_keep_open"] = True
+                    get_event_store(self._run_id).emit(
+                        phase="COMPLETE",
+                        action="KEEP_OPEN",
+                        status="OK" if ok else "FAIL",
+                        value_summary="Browser remains open for inspection.",
+                    )
+                elif profile_path.is_dir() and self._run_id:
+                    from qa_orchestrator.live_browser_close import mark_session_closed
+
+                    mark_session_closed(
+                        profile_path,
+                        extra={"finalized_by": "playwright_runner", "automatic_teardown": True},
+                    )
+                    get_event_store(self._run_id).emit(
+                        phase="BROWSER",
+                        action="CLOSE",
+                        status="OK" if ok else "FAIL",
+                        value_summary="Automatic browser teardown after Playwright run.",
+                    )
             report_path = cwd / "reports" / "results.json"
             if report_path.exists():
                 try:

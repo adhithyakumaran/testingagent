@@ -69,6 +69,12 @@ export const test = base.extend<Fixtures>({
         allowLiveRunTeardownClose();
         await context.close();
         setSharedLiveContext(null);
+        writeSessionMeta({
+          status: 'CLOSED',
+          keep_open: false,
+          closed_at: new Date().toISOString(),
+          diagnostics: getLiveRunDiagnostics(),
+        });
         emitLiveRunMarker('browser_closed');
         emitLiveRunDiagnostics(getLiveRunDiagnostics());
         emitLiveRunMarker('RUN_END');
@@ -111,9 +117,7 @@ export const test = base.extend<Fixtures>({
     await use(page);
     await captureStepEvidence(page, testInfo, 'test-end');
     emitLiveRunMarker('FLOW_END', flowId);
-    if (!keepOpen()) {
-      await page.close();
-    } else {
+    if (keepOpen()) {
       await page.bringToFront();
     }
   },

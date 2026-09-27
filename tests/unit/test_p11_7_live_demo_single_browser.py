@@ -169,6 +169,17 @@ def test_live_diagnostics_expected_shape():
         assert key in diag
 
 
+def test_live_demo_applies_automatic_teardown_env(monkeypatch: pytest.MonkeyPatch):
+    from qa_orchestrator.live_browser_config import apply_live_browser_env, load_live_browser_config
+
+    monkeypatch.setenv("QA_RUN_MODE", "LIVE_DEMO")
+    monkeypatch.setenv("EA_BASE_URL", "https://uat.example.com/ords/r/tjdcom/ea")
+    monkeypatch.delenv("QA_KEEP_BROWSER_OPEN", raising=False)
+    cfg = load_live_browser_config()
+    env = apply_live_browser_env(cfg, {}, run_id="run-env-1")
+    assert env["QA_KEEP_BROWSER_OPEN"] == "false"
+
+
 def test_live_multi_flow_run_uses_single_collapsed_subprocess(monkeypatch):
     import subprocess
 

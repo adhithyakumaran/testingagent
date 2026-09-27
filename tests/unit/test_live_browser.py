@@ -28,15 +28,23 @@ def test_ci_mode_defaults_headless(monkeypatch: pytest.MonkeyPatch):
     assert cfg.keep_browser_open is False
 
 
-def test_live_demo_mode_headed_keep_open_delay(monkeypatch: pytest.MonkeyPatch):
+def test_live_demo_mode_headed_automatic_teardown_by_default(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("QA_RUN_MODE", "LIVE_DEMO")
     monkeypatch.setenv("EA_BASE_URL", "https://uat.example.com/ords/r/tjdcom/ea")
+    monkeypatch.delenv("QA_KEEP_BROWSER_OPEN", raising=False)
     cfg = load_live_browser_config()
     assert cfg.is_live is True
     assert cfg.headless is False
-    assert cfg.keep_browser_open is True
+    assert cfg.keep_browser_open is False
     assert cfg.action_delay_ms >= 500
     assert cfg.browser_channel == "chrome"
+
+
+def test_live_demo_keep_open_only_when_explicit(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("QA_RUN_MODE", "LIVE_DEMO")
+    monkeypatch.setenv("QA_KEEP_BROWSER_OPEN", "true")
+    cfg = load_live_browser_config()
+    assert cfg.keep_browser_open is True
 
 
 def test_live_requires_configured_url(monkeypatch: pytest.MonkeyPatch):

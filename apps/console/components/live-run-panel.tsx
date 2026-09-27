@@ -172,11 +172,15 @@ export function LiveRunPanel({ runId, goal, flowId, runStatus, conclusion, liveM
           ) : null}
         </div>
         {keepOpenMessage ? <p className="live-run-complete">{keepOpenMessage}</p> : null}
-        {sessionClosed ? <p className="live-run-complete">Browser session closed.</p> : null}
+        {sessionClosed || (!active && session?.keep_open !== true) ? (
+          <p className="live-run-complete">Browser session closed.</p>
+        ) : null}
         {error ? <p className="live-run-error">{error}</p> : null}
-        <Button type="button" variant="secondary" onClick={closeBrowser} disabled={sessionClosed}>
-          <XCircle size={16} aria-hidden /> Close Browser
-        </Button>
+        {session?.keep_open === true ? (
+          <Button type="button" variant="secondary" onClick={closeBrowser} disabled={sessionClosed}>
+            <XCircle size={16} aria-hidden /> Close Browser
+          </Button>
+        ) : null}
       </footer>
     </section>
   );
