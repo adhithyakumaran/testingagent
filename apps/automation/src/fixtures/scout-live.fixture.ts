@@ -12,12 +12,19 @@ import {
   writeSessionMeta,
 } from '../core/live-browser-lifecycle';
 import { ensureRunScopedLogin } from '../core/live-run-scoped-auth';
+import { allowLiveRunTeardownClose } from '../core/live-context-guard';
 import {
   getLiveRunDiagnostics,
   isLiveSessionAuthenticated,
   markLiveSessionAuthenticated,
+  recordInitialLivePageIfNeeded,
   setSharedLiveContext,
 } from '../core/live-browser-shared';
+import {
+  emitLiveRunDiagnostics,
+  emitLiveRunMarker,
+  flowIdFromTestTags,
+} from '../core/live-run-log';
 import { ensureAuthenticated } from './auth';
 import { LoginPage } from '../pages/login.page';
 import { HomePage } from '../pages/home.page';
@@ -25,6 +32,8 @@ import { ProductSearchPage } from '../pages/product-search.page';
 import { StockVisibilityPage } from '../pages/stock-visibility.page';
 
 const keepOpen = () => process.env.QA_KEEP_BROWSER_OPEN === 'true';
+
+let runStartLogged = false;
 
 type Fixtures = {
   liveContext: BrowserContext;
@@ -40,6 +49,10 @@ type Fixtures = {
 export const test = base.extend<Fixtures>({
   liveContext: [
     async ({}, use) => {
+      if (!runStartLogged) {
+        runStartLogged = true;
+        emitLiveRunMarker('RUN_START');
+      }
       const context = await launchLiveContext();
       await emitLiveEvent({ phase: 'BROWSER', action: 'LAUNCH', status: 'OK' });
       writeSessionMeta({
@@ -53,8 +66,12 @@ export const test = base.extend<Fixtures>({
       emitLiveFixtureStage('teardown_returning');
       writeSessionMeta({ diagnostics: getLiveRunDiagnostics() });
       if (!keepOpen()) {
+        allowLiveRunTeardownClose();
         await context.close();
         setSharedLiveContext(null);
+        emitLiveRunMarker('browser_closed');
+        emitLiveRunDiagnostics(getLiveRunDiagnostics());
+        emitLiveRunMarker('RUN_END');
       } else {
         noteKeepOpenBrowserLeftRunning();
         spawnKeepOpenKeeper();
@@ -74,11 +91,14 @@ export const test = base.extend<Fixtures>({
   ],
   page: async ({ liveContext, liveSession }, use, testInfo) => {
     void liveSession;
-    const flowId = process.env.QA_FLOW_ID || '';
+    const flowId = flowIdFromTestTags(testInfo.tags, testInfo.title);
+    emitLiveRunMarker('FLOW_START', flowId);
     const title = flowId ? `ScoutAI Live QA — ${flowId}` : 'ScoutAI Live QA';
     let page = liveContext.pages()[0];
     if (!page) {
       page = await liveContext.newPage();
+    } else {
+      recordInitialLivePageIfNeeded();
     }
     await page.setViewportSize({ width: 1366, height: 768 });
     try {
@@ -90,6 +110,7 @@ export const test = base.extend<Fixtures>({
     await captureStepEvidence(page, testInfo, 'test-start');
     await use(page);
     await captureStepEvidence(page, testInfo, 'test-end');
+    emitLiveRunMarker('FLOW_END', flowId);
     if (!keepOpen()) {
       await page.close();
     } else {

@@ -4,11 +4,13 @@ import path from 'path';
 import { emitLiveEvent } from './live-events';
 import { emitLiveFixtureStage } from './live-fixture-diagnostics';
 import { readSessionMetaFromDisk, writeSessionMeta } from './live-browser-lifecycle';
+import { guardSharedLiveContext } from './live-context-guard';
 import {
   getLiveRunDiagnostics,
   getSharedLiveContext,
   recordLiveBrowserLaunch,
   recordLiveContextAttach,
+  recordInitialLivePageIfNeeded,
   setSharedLiveContext,
 } from './live-browser-shared';
 
@@ -51,7 +53,7 @@ async function attachExistingLiveContext(profileDir: string): Promise<BrowserCon
     const context = browser.contexts()[0];
     if (!context) return null;
     recordLiveContextAttach();
-    setSharedLiveContext(context);
+    setSharedLiveContext(guardSharedLiveContext(context));
     emitLiveFixtureStage('context_attached');
     writeSessionMeta({
       attached_via_cdp: true,
@@ -93,6 +95,7 @@ export async function launchLiveContext(): Promise<BrowserContext> {
     });
     emitLiveFixtureStage('browser_launched');
     emitLiveFixtureStage('context_created');
+    recordInitialLivePageIfNeeded();
     return attached;
   }
 
@@ -117,7 +120,8 @@ export async function launchLiveContext(): Promise<BrowserContext> {
       ignoreHTTPSErrors: process.env.EA_IGNORE_HTTPS_ERRORS === 'true',
     });
     recordLiveBrowserLaunch();
-    setSharedLiveContext(context);
+    setSharedLiveContext(guardSharedLiveContext(context));
+    recordInitialLivePageIfNeeded();
     emitLiveFixtureStage('browser_launched');
     emitLiveFixtureStage('context_created');
     writeSessionMeta({

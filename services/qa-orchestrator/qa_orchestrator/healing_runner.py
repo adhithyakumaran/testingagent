@@ -40,6 +40,15 @@ def run_isolated_retry(
         env["QA_RUN_ID"] = run_id
     if flow_id:
         env["QA_FLOW_ID"] = flow_id
+    try:
+        from qa_orchestrator.live_browser_config import apply_live_browser_env, load_live_browser_config
+
+        live_cfg = load_live_browser_config()
+        if live_cfg.is_live and run_id:
+            env = apply_live_browser_env(live_cfg, env, run_id=run_id)
+            env["EA_SKIP_GLOBAL_SETUP"] = "true"
+    except ImportError:
+        pass
     if timing_wait_ms:
         env["QA_HEALING_TIMING_MS"] = str(timing_wait_ms)
 

@@ -78,7 +78,8 @@ const grep =
     ? buildNegativeGrep(flowIds, excludeTags)
     : buildPositiveGrep(flowIds, excludeTags);
 
-const playwrightArgs = ['playwright', 'test', '--grep', grep];
+console.error('LIVE_RUN:RUN_START collapsed_selection');
+const playwrightArgs = ['playwright', 'test', '--grep', grep, '--workers=1'];
 const result = spawnSync('npx', playwrightArgs, {
   cwd: root,
   stdio: 'inherit',
@@ -86,4 +87,5 @@ const result = spawnSync('npx', playwrightArgs, {
   shell: process.platform === 'win32',
 });
 
+console.error(`LIVE_RUN:RUN_END exit=${result.status ?? 1}`);
 process.exit(result.status ?? 1);

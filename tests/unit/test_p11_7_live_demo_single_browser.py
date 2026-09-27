@@ -45,6 +45,11 @@ def test_should_collapse_multi_flow_live_commands():
     assert should_collapse_live_commands(is_live=True, keep_open=True, commands=cmds)
 
 
+def test_should_collapse_multi_flow_live_without_keep_open():
+    cmds = build_positive_flow_commands(["BF-PRODUCT-003", "BF-PRODUCT-004"])
+    assert should_collapse_live_commands(is_live=True, keep_open=False, commands=cmds)
+
+
 def test_single_sku_command_not_collapsed_but_one_process():
     cmd = build_flow_command("BF-PRODUCT-003", polarity="positive")
     assert not should_collapse_live_commands(is_live=True, keep_open=True, commands=[cmd])
@@ -136,22 +141,110 @@ def test_dry_run_ci_unchanged_multi_command():
 
 
 def test_live_diagnostics_expected_shape():
-    diag = {
-        "run_id": "run_x",
-        "playwright_process_count": 1,
-        "browser_launch_count": 1,
-        "context_launch_count": 1,
-        "login_count": 1,
-        "selected_test_count": 1,
-        "commands_count": 1,
-    }
+    from qa_orchestrator.live_playwright_invoke import empty_live_diagnostics
+
+    diag = empty_live_diagnostics(run_id="run_x", commands_count=2)
+    diag.update(
+        {
+            "playwright_process_count": 1,
+            "browser_launch_count": 1,
+            "context_launch_count": 1,
+            "login_count": 1,
+            "page_count": 1,
+            "browser_close_count": 1,
+            "selected_test_count": 2,
+        }
+    )
     for key in (
         "run_id",
         "playwright_process_count",
         "browser_launch_count",
         "context_launch_count",
         "login_count",
+        "page_count",
+        "browser_close_count",
         "selected_test_count",
         "commands_count",
     ):
         assert key in diag
+
+
+def test_live_multi_flow_run_uses_single_collapsed_subprocess(monkeypatch):
+    import subprocess
+
+    from qa_orchestrator.models import SuiteSelectionPlan
+    from qa_orchestrator.playwright_runner import PlaywrightRunner, PlaywrightRunnerConfig
+
+    calls: list[list[str] | str] = []
+
+    def fake_run(cmd, **kwargs):  # noqa: ANN001
+        calls.append(cmd)
+        class _Proc:
+            returncode = 0
+            stdout = "Running 2 tests using 1 worker\n  2 passed\n"
+            stderr = ""
+
+        return _Proc()
+
+    monkeypatch.setenv("QA_RUN_MODE", "LIVE_DEMO")
+    monkeypatch.setenv("EA_BASE_URL", "https://uat.example.com/ords/r/tjdcom/ea")
+    monkeypatch.setenv("QA_RUN_ID", "run-collapse-1")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    runner = PlaywrightRunner(
+        PlaywrightRunnerConfig(automation_dir=AUTOMATION, dry_run=False),
+    )
+    runner.set_run_context(run_id="run-collapse-1", flow_ids=["BF-PRODUCT-003", "BF-PRODUCT-004"])
+    cmds = [
+        "npm run test:flow:positive -- BF-PRODUCT-003",
+        "npm run test:flow:positive -- BF-PRODUCT-004",
+    ]
+    result = runner.run_selection(
+        SuiteSelectionPlan(commands=cmds, flow_ids=["BF-PRODUCT-003", "BF-PRODUCT-004"])
+    )
+    assert result.ok
+    assert len(calls) == 1
+    argv = calls[0]
+    assert isinstance(argv, list)
+    assert any("run-live-playwright.mjs" in part for part in argv)
+    meta = result.observations[0].meta or {}
+    diag = meta.get("live_diagnostics") or {}
+    assert diag.get("commands_collapsed") is True
+    assert diag.get("playwright_process_count") == 1
+
+
+def test_failed_flow_does_not_imply_extra_subprocess_when_collapsed(monkeypatch):
+    import subprocess
+
+    from qa_orchestrator.models import SuiteSelectionPlan
+    from qa_orchestrator.playwright_runner import PlaywrightRunner, PlaywrightRunnerConfig
+
+    calls: list[list[str] | str] = []
+
+    def fake_run(cmd, **kwargs):  # noqa: ANN001
+        calls.append(cmd)
+
+        class _Proc:
+            returncode = 1
+            stdout = "Running 2 tests using 1 worker\n  1 failed\n  1 passed\n"
+            stderr = ""
+
+        return _Proc()
+
+    monkeypatch.setenv("QA_RUN_MODE", "LIVE")
+    monkeypatch.setenv("QA_KEEP_BROWSER_OPEN", "false")
+    monkeypatch.setenv("EA_BASE_URL", "https://uat.example.com/ords/r/tjdcom/ea")
+    monkeypatch.setenv("QA_RUN_ID", "run-fail-1")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    runner = PlaywrightRunner(PlaywrightRunnerConfig(automation_dir=AUTOMATION, dry_run=False))
+    runner.set_run_context(run_id="run-fail-1", flow_ids=["BF-PRODUCT-003", "BF-PRODUCT-004"])
+    cmds = [
+        "npm run test:flow:positive -- BF-PRODUCT-003",
+        "npm run test:flow:positive -- BF-PRODUCT-004",
+    ]
+    result = runner.run_selection(
+        SuiteSelectionPlan(commands=cmds, flow_ids=["BF-PRODUCT-003", "BF-PRODUCT-004"])
+    )
+    assert not result.ok
+    assert len(calls) == 1

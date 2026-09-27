@@ -191,10 +191,9 @@ class PlaywrightRunner:
         collapse = (
             live_cfg
             and live_cfg.is_live
-            and live_cfg.keep_browser_open
             and should_collapse_live_commands(
                 is_live=True,
-                keep_open=True,
+                keep_open=live_cfg.keep_browser_open,
                 commands=commands,
             )
         )

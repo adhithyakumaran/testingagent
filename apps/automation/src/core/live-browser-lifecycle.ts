@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
 import type { BrowserContext } from '@playwright/test';
+import { allowLiveRunTeardownClose } from './live-context-guard';
 import { appendSequencedEvent } from './live-event-sequence';
 
 let closed = false;
@@ -113,6 +114,7 @@ export async function gracefulCloseFromSignal(context: BrowserContext): Promise<
     closed_at: new Date().toISOString(),
   });
   try {
+    allowLiveRunTeardownClose();
     await context.close();
   } catch {
     /* context may already be closing */
@@ -153,6 +155,7 @@ export async function watchCloseSignalWhileOpen(context: BrowserContext): Promis
     if (!browser || !browser.isConnected() || context.pages().length === 0) {
       markDisconnected('browser_unavailable');
       try {
+        allowLiveRunTeardownClose();
         await context.close();
       } catch {
         /* ignore */

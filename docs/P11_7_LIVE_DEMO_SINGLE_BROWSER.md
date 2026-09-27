@@ -15,7 +15,7 @@
 ScoutAI run
   → SuiteSelector (commands unchanged for CI)
   → PlaywrightRunner.run_selection()
-       • keep-open + multiple flow commands → ONE node run-live-playwright.mjs subprocess
+       • live + multiple flow commands → ONE node run-live-playwright.mjs subprocess
        • single command → ONE npm/playwright subprocess (unchanged entry)
   → worker-scoped liveContext (P11.6)
        • CDP attach if same run_id + ACTIVE profile + DevToolsActivePort
@@ -55,7 +55,7 @@ ScoutAI run
 
 Persisted in execution observation `meta.live_diagnostics` and agent `state.metadata.live_diagnostics`:
 
-- `run_id`, `playwright_process_count`, `browser_launch_count`, `context_launch_count`, `login_count`, `selected_test_count`, `commands_count`
+- `run_id`, `playwright_process_count`, `browser_launch_count`, `context_launch_count`, `login_count`, `page_count`, `browser_close_count`, `selected_test_count`, `commands_count`
 
 Never includes passwords, cookies, tokens, or auth storage.
 

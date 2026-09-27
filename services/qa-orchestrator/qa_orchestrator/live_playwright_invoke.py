@@ -41,7 +41,11 @@ def commands_are_collapsible_flow_runs(commands: list[str]) -> bool:
 
 
 def should_collapse_live_commands(*, is_live: bool, keep_open: bool, commands: list[str]) -> bool:
-    if not is_live or not keep_open:
+    """One Playwright process for all flow commands in a live run (single browser session).
+
+    ``keep_open`` controls post-run browser teardown only — not whether commands are collapsed.
+    """
+    if not is_live:
         return False
     if len(commands) <= 1:
         return False
@@ -136,6 +140,8 @@ def empty_live_diagnostics(*, run_id: str, commands_count: int) -> dict[str, Any
         "browser_launch_count": 0,
         "context_launch_count": 0,
         "login_count": 0,
+        "page_count": 0,
+        "browser_close_count": 0,
         "selected_test_count": 0,
         "commands_count": commands_count,
     }
@@ -150,6 +156,8 @@ def merge_session_diagnostics(profile_dir: Path, base: dict[str, Any]) -> dict[s
             "context_launch_count",
             "login_count",
             "context_attach_count",
+            "page_count",
+            "browser_close_count",
         ):
             if key in diag:
                 base[key] = diag[key]

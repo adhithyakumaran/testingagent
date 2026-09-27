@@ -4,10 +4,15 @@ import { test, expect } from '@playwright/test';
 import { emitLiveFixtureStage } from '../../src/core/live-fixture-diagnostics';
 import { resetLiveBrowserClosedForTests, spawnKeepOpenKeeper } from '../../src/core/live-browser-lifecycle';
 import {
+  getLiveRunDiagnostics,
   getSharedLiveContext,
+  recordInitialLivePageIfNeeded,
+  recordLiveBrowserLaunch,
+  recordLiveLogin,
   resetLiveBrowserSharedForTests,
   setSharedLiveContext,
 } from '../../src/core/live-browser-shared';
+import { emitLiveRunMarker } from '../../src/core/live-run-log';
 
 test.describe('live browser lifecycle', () => {
   test.afterEach(() => {
@@ -33,6 +38,39 @@ test.describe('live browser lifecycle', () => {
   test('live batch runner script exists for collapsed LIVE_DEMO commands', async () => {
     const batch = path.resolve(__dirname, '../../scripts/run-live-playwright.mjs');
     expect(fs.existsSync(batch)).toBeTruthy();
+    const text = fs.readFileSync(batch, 'utf8');
+    expect(text).toContain('--workers=1');
+    expect(text).toContain('LIVE_RUN:RUN_START');
+  });
+
+  test('live run diagnostics counters track launch login page close', async () => {
+    recordLiveBrowserLaunch();
+    recordLiveLogin();
+    recordInitialLivePageIfNeeded();
+    recordInitialLivePageIfNeeded();
+    const diag = getLiveRunDiagnostics();
+    expect(diag.browser_launch_count).toBe(1);
+    expect(diag.context_launch_count).toBe(1);
+    expect(diag.login_count).toBe(1);
+    expect(diag.page_count).toBe(1);
+    expect(diag.browser_close_count).toBe(0);
+  });
+
+  test('live run markers emit structured stderr', async () => {
+    const lines: string[] = [];
+    const orig = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      lines.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      emitLiveRunMarker('FLOW_START', 'BF-HOME-010');
+      emitLiveRunMarker('FLOW_END', 'BF-HOME-010');
+    } finally {
+      process.stderr.write = orig;
+    }
+    expect(lines.some((l) => l.includes('LIVE_RUN:FLOW_START BF-HOME-010'))).toBeTruthy();
+    expect(lines.some((l) => l.includes('LIVE_RUN:FLOW_END BF-HOME-010'))).toBeTruthy();
   });
 
   test('spawnKeepOpenKeeper returns immediately', async () => {
