@@ -72,3 +72,19 @@ def test_bf_product_004_grep_requires_positive_tag():
     grep = _node_grep("BF-PRODUCT-004")
     assert "@positive" in grep
     assert "@BF-PRODUCT-004".replace("@", "") in grep or "BF-PRODUCT-004" in grep
+
+
+def test_bf_home_010_01_positive_grep_selects_p01_only():
+    home_spec = AUTOMATION / "tests" / "home" / "BF-HOME-010-01.spec.ts"
+    grep = _node_grep("BF-HOME-010-01")
+    text = home_spec.read_text(encoding="utf-8")
+    describe = re.search(r"test\.describe\('([^']+)'", text)
+    tests = re.findall(r"test\('([^']+)'", text)
+    assert describe is not None
+    matched = [
+        f"{describe.group(1)} {t}"
+        for t in tests
+        if re.search(grep, f"{describe.group(1)} {t}")
+    ]
+    assert len(matched) == 1
+    assert "TC-BF-HOME-010-01-P01" in matched[0]

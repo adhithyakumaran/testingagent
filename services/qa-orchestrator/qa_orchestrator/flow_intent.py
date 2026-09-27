@@ -10,6 +10,8 @@ ProductIntentKind = Literal["search_product", "view_product"]
 FLOW_SEARCH_PRODUCT = "BF-PRODUCT-003"
 FLOW_VIEW_PRODUCT = "BF-PRODUCT-004"
 
+EXPLICIT_FLOW_ID_RE = re.compile(r"\b(BF-[A-Z0-9]+(?:-[A-Z0-9]+)*)\b", re.IGNORECASE)
+
 _VIEW_PHRASES = (
     "view product",
     "open product",
@@ -33,6 +35,19 @@ _SEARCH_PHRASES = (
     "lookup sku",
     "look up sku",
 )
+
+
+def extract_explicit_flow_ids(goal: str) -> list[str]:
+    """Canonical BF-* ids mentioned verbatim in the user request (order preserved)."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for match in EXPLICIT_FLOW_ID_RE.finditer(goal or ""):
+        fid = match.group(1).upper()
+        if fid in seen:
+            continue
+        seen.add(fid)
+        out.append(fid)
+    return out
 
 
 def extract_sku(goal: str) -> str | None:

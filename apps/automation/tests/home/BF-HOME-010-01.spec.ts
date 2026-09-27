@@ -2,7 +2,7 @@ import { test, expect } from '../../src/fixtures/test-base';
 import { attachEvidence } from '../../src/core/evidence';
 
 test.describe('BF-HOME-010-01 Item Search @BF-HOME-010-01 @BF-PRODUCT-003 @regression @product-search', () => {
-  test('TC-BF-HOME-010-01-P01 search valid item code displays result @sanity', async ({
+  test('TC-BF-HOME-010-01-P01 search valid item code displays result @sanity @positive', async ({
     authenticatedPage,
     productSearchPage,
     page,

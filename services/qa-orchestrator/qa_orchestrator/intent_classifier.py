@@ -4,6 +4,9 @@ import re
 from typing import Any
 
 from qa_orchestrator.flow_intent import (
+    FLOW_SEARCH_PRODUCT,
+    FLOW_VIEW_PRODUCT,
+    extract_explicit_flow_ids,
     extract_sku,
     primary_flow_for_product_kind,
     resolve_product_intent_kind,
@@ -286,7 +289,62 @@ class IntentClassifier:
         primary = [f for f in candidates if self.graph._is_primary(f)]
         return primary or candidates[:1]
 
+    def _apply_explicit_flow_precedence(self, intent: IntentClassification) -> IntentClassification:
+        """User-stated canonical flow ids win over semantic product-kind routing."""
+        explicit = extract_explicit_flow_ids(intent.goal)
+        if not explicit:
+            return intent
+        primary: str | None = None
+        for fid in explicit:
+            if not self.graph._is_primary(fid):
+                continue
+            if self.graph.evaluate_execution(fid).executable:
+                primary = fid
+                break
+        if not primary:
+            return intent
+
+        supporting = list(
+            dict.fromkeys(
+                [
+                    *[f for f in explicit if f != primary],
+                    *[f for f in intent.supporting_flow_ids if f != primary],
+                    *[f for f in intent.flow_ids if f != primary],
+                ]
+            )
+        )
+        kind = resolve_product_intent_kind(intent.goal)
+        if kind == "search_product" and primary != FLOW_SEARCH_PRODUCT:
+            if FLOW_SEARCH_PRODUCT not in supporting:
+                supporting.append(FLOW_SEARCH_PRODUCT)
+        elif kind == "view_product" and primary != FLOW_VIEW_PRODUCT:
+            if FLOW_SEARCH_PRODUCT not in supporting:
+                supporting.append(FLOW_SEARCH_PRODUCT)
+
+        params = dict(intent.params)
+        sku = extract_sku(intent.goal)
+        if sku and "sku" not in params:
+            params["sku"] = sku
+        mode = intent.execution_mode
+        if sku and mode == "adhoc_existing":
+            mode = "adhoc_parameterized"
+
+        return intent.model_copy(
+            update={
+                "flow_ids": [primary],
+                "supporting_flow_ids": supporting,
+                "params": params,
+                "execution_mode": mode,
+                "reasoning": f"Explicit canonical flow id {primary} in user request",
+            }
+        )
+
     def _apply_product_capability_routing(self, intent: IntentClassification) -> IntentClassification:
+        intent = self._apply_explicit_flow_precedence(intent)
+        explicit = extract_explicit_flow_ids(intent.goal)
+        if explicit and intent.flow_ids and intent.flow_ids[0] in explicit:
+            return intent
+
         kind = resolve_product_intent_kind(intent.goal)
         if not kind:
             return intent

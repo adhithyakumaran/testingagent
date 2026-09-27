@@ -10,6 +10,7 @@ from qa_orchestrator.flow_audit_registry import audit_record
 from qa_orchestrator.flow_intent import (
     FLOW_SEARCH_PRODUCT,
     FLOW_VIEW_PRODUCT,
+    extract_explicit_flow_ids,
     extract_sku,
     primary_flow_for_product_kind,
     resolve_product_intent_kind,
@@ -255,6 +256,29 @@ class FlowResolver:
         ranked = sorted(diagnostics, key=lambda d: d.score, reverse=True)
         reasons: list[str] = []
         mismatch = False
+
+        for fid in extract_explicit_flow_ids(goal):
+            if not self.graph._is_primary(fid):
+                continue
+            pref = next((d for d in diagnostics if d.flow_id == fid), None)
+            if not pref or not pref.executable:
+                continue
+            supporting = list(
+                dict.fromkeys(
+                    [
+                        *[f for f in extract_explicit_flow_ids(goal) if f != fid],
+                        *[f for f in intent_flow_ids if f != fid],
+                    ]
+                )
+            )
+            if intent_kind == "search_product" and fid != FLOW_SEARCH_PRODUCT:
+                if FLOW_SEARCH_PRODUCT not in supporting:
+                    supporting.append(FLOW_SEARCH_PRODUCT)
+            elif intent_kind == "view_product" and fid != FLOW_VIEW_PRODUCT:
+                if FLOW_SEARCH_PRODUCT not in supporting:
+                    supporting.append(FLOW_SEARCH_PRODUCT)
+            reasons.append(f"Explicit canonical flow id {fid} in user request")
+            return fid, supporting[:4], reasons, False
 
         if intent_flow_ids and intent_kind not in {"view_product", "search_product"}:
             preferred = intent_flow_ids[0]
