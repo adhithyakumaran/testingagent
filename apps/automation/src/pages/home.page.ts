@@ -1,6 +1,8 @@
-import type { Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 import { appUrl } from '../core/app-url';
 import { dismissBlockingOverlays } from '../core/apex-overlays';
+import { assertHomeTileDestination } from '../core/home-tile-assert';
+import type { HomeTileMatrixEntry } from '../data/home-tile-matrix';
 import { LOCATORS, LocatorResolver } from '../core/locator-chain';
 
 function escapeRegExp(text: string): string {
@@ -126,5 +128,86 @@ export class HomePage {
     await dismissBlockingOverlays(this.page);
     const settings = await this.resolver.firstVisible([...LOCATORS.userMenu.settings], 'settings', 10_000);
     await settings.click({ force: true });
+  }
+
+  /** Home navigation hub cards (BF-HOME-010 Smoke V2–V6). */
+  homeCardLinks() {
+    return this.page.locator('a.custom-card-wrap, li.custom-card-item a');
+  }
+
+  tileLink(name: string) {
+    const card = locateHomeCard(this.page, name);
+    return card.first();
+  }
+
+  async getHomeTileCount(): Promise<number> {
+    await dismissBlockingOverlays(this.page);
+    await this.page.waitForURL(/\/home/i, { timeout: 15_000 });
+    return this.homeCardLinks().count();
+  }
+
+  async getHomeTileNames(): Promise<string[]> {
+    await dismissBlockingOverlays(this.page);
+    await this.page.waitForURL(/\/home/i, { timeout: 15_000 });
+    const cards = this.homeCardLinks();
+    const count = await cards.count();
+    const names: string[] = [];
+    for (let i = 0; i < count; i++) {
+      const heading = cards.nth(i).locator('h3').first();
+      const text = (await heading.textContent().catch(() => '')) ?? '';
+      const trimmed = text.trim();
+      if (trimmed) names.push(trimmed);
+    }
+    return names;
+  }
+
+  async expectTileImageVisible(tileName: string): Promise<void> {
+    const card = this.tileLink(tileName);
+    await expect(card, `Tile "${tileName}" card should be visible`).toBeVisible({ timeout: 12_000 });
+    await expect(
+      card.getByRole('img').first(),
+      `Tile "${tileName}" should have a visible card image`
+    ).toBeVisible({ timeout: 12_000 });
+  }
+
+  async clickHomeTile(name: string): Promise<void> {
+    await dismissBlockingOverlays(this.page);
+    const link = this.tileLink(name);
+    await link.waitFor({ state: 'visible', timeout: 15_000 });
+    await link.scrollIntoViewIfNeeded();
+    await link.click({ force: true, timeout: 10_000 });
+  }
+
+  async returnToHome(homeUrl: string): Promise<void> {
+    await this.page.goto(homeUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+    await dismissBlockingOverlays(this.page);
+    await this.page.waitForURL(/\/home/i, { timeout: 30_000 });
+  }
+
+  /**
+   * Teammate Smoke Flow 1 V6 — navigate tile and assert destination; return to home when configured.
+   */
+  async verifyTileNavigation(entry: HomeTileMatrixEntry, homeUrl: string): Promise<void> {
+    if (entry.automation !== 'automated' || !entry.navigation) {
+      throw new Error(`Tile "${entry.name}" is not approved for automated navigation`);
+    }
+
+    const nav = entry.navigation;
+    if (nav.opensNewTab) {
+      const popupPromise = this.page.waitForEvent('popup');
+      await this.clickHomeTile(entry.name);
+      const popup = await popupPromise;
+      await popup.waitForLoadState('domcontentloaded').catch(() => undefined);
+      await assertHomeTileDestination(popup, entry);
+      await popup.close();
+      return;
+    }
+
+    await this.clickHomeTile(entry.name);
+    await this.page.waitForLoadState('domcontentloaded').catch(() => undefined);
+    await assertHomeTileDestination(this.page, entry);
+    if (entry.returnToHomeAfterNav) {
+      await this.returnToHome(homeUrl);
+    }
   }
 }

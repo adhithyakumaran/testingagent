@@ -65,6 +65,82 @@ test_cases:
     framework: playwright
     spec_glob: tests/**/BF-HOME-010*.spec.ts
     test_match: TC-BF-HOME-010-E01
+- id: TC-BF-HOME-010-P02
+  title: Home Navigation Hub — tile count equals 28
+  type: positive
+  priority: P1
+  tags:
+  - regression
+  - bf-home-010
+  linked_scenario: SC-BF-HOME-010-001
+  steps_summary: Verify home navigation card count matches teammate smoke matrix.
+  expected_result:
+  - Home displays exactly 28 navigation tiles.
+  automation:
+    framework: playwright
+    spec_glob: tests/**/BF-HOME-010*.spec.ts
+    test_match: TC-BF-HOME-010-P02
+- id: TC-BF-HOME-010-P03
+  title: Home Navigation Hub — all matrix tile names visible
+  type: positive
+  priority: P1
+  tags:
+  - regression
+  - bf-home-010
+  linked_scenario: SC-BF-HOME-010-001
+  steps_summary: Assert each expected tile label is present on Home.
+  expected_result:
+  - All tile names in home-tile-matrix appear on the Home page.
+  automation:
+    framework: playwright
+    spec_glob: tests/**/BF-HOME-010*.spec.ts
+    test_match: TC-BF-HOME-010-P03
+- id: TC-BF-HOME-010-P04
+  title: Home Navigation Hub — each tile has card image
+  type: positive
+  priority: P2
+  tags:
+  - regression
+  - bf-home-010
+  linked_scenario: SC-BF-HOME-010-001
+  steps_summary: Verify visible card image per navigation tile.
+  expected_result:
+  - Each home navigation tile exposes a visible card image.
+  automation:
+    framework: playwright
+    spec_glob: tests/**/BF-HOME-010*.spec.ts
+    test_match: TC-BF-HOME-010-P04
+- id: TC-BF-HOME-010-P05
+  title: Home Navigation Hub — tile order matches teammate smoke
+  type: positive
+  priority: P2
+  tags:
+  - regression
+  - bf-home-010
+  linked_scenario: SC-BF-HOME-010-001
+  steps_summary: Compare on-screen tile order to home-tile-matrix order.
+  expected_result:
+  - Tile order matches the teammate Smoke Flow 1 definition.
+  automation:
+    framework: playwright
+    spec_glob: tests/**/BF-HOME-010*.spec.ts
+    test_match: TC-BF-HOME-010-P05
+- id: TC-BF-HOME-010-P06
+  title: Home Navigation Hub — parameterized tile navigation
+  type: positive
+  priority: P1
+  tags:
+  - regression
+  - bf-home-010
+  linked_scenario: SC-BF-HOME-010-026
+  steps_summary: For each automatable tile in the matrix, click tile, assert destination contract, return Home.
+  expected_result:
+  - Each automated matrix tile navigates per its navigation contract.
+  - SME-flagged tiles are excluded until reconciliation.
+  automation:
+    framework: playwright
+    spec_glob: tests/**/BF-HOME-010*.spec.ts
+    test_match: TC-BF-HOME-010-P06
 - id: TC-BF-HOME-010-E02
   title: Home Page / Application Navigation Map — documented unknown-rule boundaries
   type: edge

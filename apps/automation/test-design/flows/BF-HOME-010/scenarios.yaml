@@ -3,6 +3,31 @@ flow_id: BF-HOME-010
 flow_name: Home Page / Application Navigation Map
 status: APPROVED
 scenarios:
+- id: SC-BF-HOME-010-001
+  title: Home Navigation Hub — Smoke aggregate (tile matrix)
+  type: functional
+  priority: P0
+  source: teammate_smoke_flow_1
+  metadata:
+    scenario: Teammate Smoke Flow 1 V2–V6
+    tile_matrix: apps/automation/src/data/home-tile-matrix.ts
+    expected_tile_count: 28
+    note: Single business flow BF-HOME-010; parameterized Playwright — not 28 business flows.
+  tags:
+  - sanity
+  - regression
+  - bf-home-010
+- id: SC-BF-HOME-010-026
+  title: Home → parameterized tile navigation (automated subset)
+  type: functional
+  priority: P1
+  source: teammate_smoke_flow_1_v6
+  metadata:
+    scenario: Data-driven navigation for tiles marked automation=automated in home-tile-matrix
+    sme_excluded: See HOME_TILES_SME_REQUIRED in home-tile-matrix.ts
+  tags:
+  - regression
+  - bf-home-010
 - id: SC-BF-HOME-010-002
   title: Home → All Products
   type: observed
