@@ -17,14 +17,24 @@ export function runNeedsAgentHydration(run: AgentRun): boolean {
   return false;
 }
 
-export async function hydrateRunFromWarmAgent(run: AgentRun): Promise<AgentRun> {
+export function countEvidenceCaptures(run: AgentRun | null): number {
+  return parseInsights(run).evidence?.length ?? 0;
+}
+
+export async function hydrateRunFromWarmAgent(
+  run: AgentRun,
+  opts?: { allowPoll?: boolean }
+): Promise<AgentRun> {
   if (!runNeedsAgentHydration(run)) return run;
 
   const immediate = await fetchWarmAgentRunResult(run.id);
   let result: Record<string, unknown> | undefined;
   if (immediate?.httpStatus === 200 && immediate.body.status === "completed" && immediate.body.result) {
     result = immediate.body.result as Record<string, unknown>;
-  } else if (immediate?.httpStatus === 202 || immediate?.body.status === "running") {
+  } else if (
+    opts?.allowPoll &&
+    (immediate?.httpStatus === 202 || immediate?.body.status === "running")
+  ) {
     const polled = await pollWarmAgentRunResult(run.id, { deadlineMs: 5_000, intervalMs: 500 });
     if (polled.ok && polled.result) result = polled.result;
   }
@@ -33,5 +43,8 @@ export async function hydrateRunFromWarmAgent(run: AgentRun): Promise<AgentRun> 
 
   const traces = [...run.traces];
   const hydrated = applyOrchestratorResultToRun({ ...run, traces }, result, traces);
+  if (run.reasonCode === "console.orchestrator_bridge_fallback") {
+    hydrated.reasonCode = String(result.reason_code || hydrated.reasonCode || "");
+  }
   return hydrated;
 }

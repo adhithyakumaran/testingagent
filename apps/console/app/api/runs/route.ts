@@ -89,30 +89,31 @@ export async function POST(req: Request) {
     for (const wait of backoffMs) {
       if (wait > 0) await new Promise((r) => setTimeout(r, wait));
       try {
-        await mutateState(async (state) => {
+        let skipOrchestration = false;
+        await mutateState((state) => {
           const idx = state.runs.findIndex((r) => r.id === runId);
           if (idx < 0) return;
-          let run = state.runs[idx];
+          const run = state.runs[idx];
           const ids = [...new Set([...(knowledgeIds || []), ...(run.knowledgePillIds || [])])];
-          const pills = state.knowledge.filter((k) => ids.includes(k.id));
           run.knowledgePillIds = ids;
-          const alreadyOrchestrated = shouldSkipDuplicateOrchestration(run);
+          skipOrchestration = shouldSkipDuplicateOrchestration(run);
+        });
+
+        const stateBefore = await readState();
+        const idxBefore = stateBefore.runs.findIndex((r) => r.id === runId);
+        if (idxBefore < 0) return;
+        let run = stateBefore.runs[idxBefore];
+        const pillIds = run.knowledgePillIds || [];
+        const pills = stateBefore.knowledge.filter((k) => pillIds.includes(k.id));
+
+        if (!skipOrchestration) {
           try {
-            if (!alreadyOrchestrated) {
-              run = await executeRun(run, pills, async (updated) => {
-                const i = state.runs.findIndex((r) => r.id === updated.id);
+            run = await executeRun(run, pills, async (updated) => {
+              await mutateState((state) => {
+                const i = state.runs.findIndex((r) => r.id === runId);
                 if (i >= 0) state.runs[i] = updated;
               });
-            } else {
-              run.traces.push({
-                id: uid("tr"),
-                at: new Date().toISOString(),
-                kind: "info",
-                message: "Skipped duplicate orchestration — run already executed",
-                detail: runId,
-              });
-              run.updatedAt = new Date().toISOString();
-            }
+            });
           } catch (err) {
             if (run.status === "running" || run.status === "queued" || run.status === "resuming") {
               run.status = "failed";
@@ -128,6 +129,20 @@ export async function POST(req: Request) {
               });
             }
           }
+        } else {
+          run.traces.push({
+            id: uid("tr"),
+            at: new Date().toISOString(),
+            kind: "info",
+            message: "Skipped duplicate orchestration — run already executed",
+            detail: runId,
+          });
+          run.updatedAt = new Date().toISOString();
+        }
+
+        await mutateState(async (state) => {
+          const idx = state.runs.findIndex((r) => r.id === runId);
+          if (idx < 0) return;
 
           if (notify.length && run.report) {
             const deliveries = await deliverReport(run, state.channels, notify);
