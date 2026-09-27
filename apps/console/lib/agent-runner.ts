@@ -194,16 +194,17 @@ export async function executeRun(
     await onUpdate({ ...run, traces: [...run.traces] });
   };
 
-  run.status = "running";
-  await onUpdate(run);
-  await push(
-    "info",
-    run.llmEnabled
-      ? "Run accepted — enterprise orchestrator (Groq classify → Playwright suites)"
-      : "Run accepted — deterministic classification (set GROQ_API_KEY for LLM)"
-  );
+  try {
+    run.status = "running";
+    await onUpdate(run);
+    await push(
+      "info",
+      run.llmEnabled
+        ? "Run accepted — enterprise orchestrator (Groq classify → Playwright suites)"
+        : "Run accepted — deterministic classification (set GROQ_API_KEY for LLM)"
+    );
 
-  const extracted = extractPills(pills);
+    const extracted = extractPills(pills);
   run.knowledgePillIds = extracted.map((p) => p.id);
   const contextPackets = extracted.map((p) => ({
     id: p.id,
@@ -312,8 +313,25 @@ export async function executeRun(
     run.status = "failed";
   }
 
-  await push("report", "Report generated");
-  run.updatedAt = new Date().toISOString();
-  await onUpdate(run);
-  return run;
+    await push("report", "Report generated");
+    run.updatedAt = new Date().toISOString();
+    await onUpdate(run);
+    return run;
+  } catch (err) {
+    if (run.status === "running" || run.status === "queued" || run.status === "resuming") {
+      run.status = "failed";
+      run.conclusion = run.conclusion || "FAIL";
+      run.reasonCode = run.reasonCode || "console.execute_run_failed";
+      run.updatedAt = new Date().toISOString();
+      run.traces.push({
+        id: uid("tr"),
+        at: new Date().toISOString(),
+        kind: "error",
+        message: "Run execution aborted before completion",
+        detail: String(err),
+      });
+      await onUpdate(run).catch(() => undefined);
+    }
+    return run;
+  }
 }

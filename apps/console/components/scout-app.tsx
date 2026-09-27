@@ -27,6 +27,7 @@ import { RecorderView } from "@/components/views/recorder-view";
 import { AgentChatFab } from "@/components/agent-chat-panel";
 import { useOrchestratorStatus } from "@/lib/use-orchestrator";
 import { useLatestRunSync } from "@/lib/use-run-sync";
+import { submitAgentRun } from "@/lib/run-submit-client";
 import type { AgentRun } from "@/lib/types";
 
 export type ScoutView =
@@ -90,18 +91,12 @@ export function ScoutApp() {
       setBusy(true);
       setError(null);
       try {
-        const res = await fetch("/api/runs", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ goal, type, channels: notifyChannels }),
-        });
-        const json = await res.json();
-        if (res.status === 409) {
-          setError(json.error || "Another run is in progress.");
+        const outcome = await submitAgentRun(fetch, { goal, type, channels: notifyChannels });
+        if (!outcome.ok) {
+          setError(outcome.error);
           return;
         }
-        if (!res.ok) throw new Error(json.error || "Run failed");
-        setActiveRun(json.run as AgentRun);
+        setActiveRun(outcome.run);
         setView("runs");
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));

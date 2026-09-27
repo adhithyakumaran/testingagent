@@ -8,7 +8,7 @@
     "start": "next start --port 43123",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test": "npx --yes tsx --test lib/run-display.test.ts lib/fs-atomic.test.ts lib/ui-layout.test.ts"
+    "test": "npx --yes tsx --test lib/run-display.test.ts lib/fs-atomic.test.ts lib/ui-layout.test.ts lib/active-run-lock.test.ts lib/run-submit-client.test.ts"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.3.3",

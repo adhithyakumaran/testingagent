@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { executeRun } from "@/lib/agent-runner";
 import { deliverReport } from "@/lib/notify";
 import { requireApiAuth, requireMutationAuth } from "@/lib/api-auth";
-import { hasActiveRun, mutateState, pushHistory, readState } from "@/lib/store";
+import { hasActiveRun, mutateState, pushHistory, readState, reconcileStoredRunLocks } from "@/lib/store";
 import type { AgentRun } from "@/lib/types";
 import { uid } from "@/lib/utils";
 
@@ -10,8 +10,7 @@ export async function GET(req: Request) {
   const denied = requireApiAuth(req);
   if (denied) return denied;
 
-  const { readState } = await import("@/lib/store");
-  const state = await readState();
+  const state = await reconcileStoredRunLocks();
   return NextResponse.json({ runs: state.runs, locked: hasActiveRun(state) });
 }
 
@@ -39,7 +38,7 @@ export async function POST(req: Request) {
         : ["email", "whatsapp"];
   const asyncRun = body.async !== false;
 
-  const gate = await readState();
+  const gate = await reconcileStoredRunLocks();
   if (hasActiveRun(gate)) {
     return NextResponse.json(
       {
@@ -91,10 +90,26 @@ export async function POST(req: Request) {
           const ids = [...new Set([...(knowledgeIds || []), ...(run.knowledgePillIds || [])])];
           const pills = state.knowledge.filter((k) => ids.includes(k.id));
           run.knowledgePillIds = ids;
-          run = await executeRun(run, pills, async (updated) => {
-            const i = state.runs.findIndex((r) => r.id === updated.id);
-            if (i >= 0) state.runs[i] = updated;
-          });
+          try {
+            run = await executeRun(run, pills, async (updated) => {
+              const i = state.runs.findIndex((r) => r.id === updated.id);
+              if (i >= 0) state.runs[i] = updated;
+            });
+          } catch (err) {
+            if (run.status === "running" || run.status === "queued" || run.status === "resuming") {
+              run.status = "failed";
+              run.conclusion = "FAIL";
+              run.reasonCode = "console.finish_run_failed";
+              run.updatedAt = new Date().toISOString();
+              run.traces.push({
+                id: uid("tr"),
+                at: new Date().toISOString(),
+                kind: "error",
+                message: "Run execution failed unexpectedly",
+                detail: String(err),
+              });
+            }
+          }
 
           if (notify.length && run.report) {
             const deliveries = await deliverReport(run, state.channels, notify);

@@ -5,6 +5,16 @@ import { MODEL_OPTIONS } from "@/lib/types";
 import { TEST_REPORT_EMAIL, TEST_REPORT_WHATSAPP } from "@/lib/channel-defaults";
 import { atomicWriteJson, readTextWithRetry, withFileLock } from "@/lib/fs-atomic";
 import { uid } from "@/lib/utils";
+import {
+  agentProbeFromJson,
+  hasActiveRun,
+  isActiveRunStatus,
+  reconcileActiveRuns,
+  type AgentRunProbe,
+} from "@/lib/active-run-lock";
+import { fetchInternalAgent } from "@/lib/internal-agent";
+
+export { hasActiveRun };
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const STATE_FILE = path.join(DATA_DIR, "state.json");
@@ -129,8 +139,36 @@ export function pushHistory(
   return item;
 }
 
-export function hasActiveRun(state: AppState): boolean {
-  return state.runs.some(
-    (r) => r.status === "running" || r.status === "queued" || r.status === "resuming"
-  );
+async function probeAgentRun(runId: string): Promise<AgentRunProbe> {
+  try {
+    const res = await fetchInternalAgent(`/agent/${encodeURIComponent(runId)}`, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(8_000),
+    });
+    let body: Record<string, unknown> | null = null;
+    try {
+      body = (await res.json()) as Record<string, unknown>;
+    } catch {
+      body = null;
+    }
+    return agentProbeFromJson(res.status, body);
+  } catch {
+    return { kind: "unreachable" };
+  }
+}
+
+/** Reconcile orphaned/stale active runs before enforcing the single-run command lock. */
+export async function reconcileStoredRunLocks(): Promise<AppState> {
+  return mutateState(async (state) => {
+    const probes = new Map<string, AgentRunProbe>();
+    for (const run of state.runs) {
+      if (isActiveRunStatus(run.status)) {
+        probes.set(run.id, await probeAgentRun(run.id));
+      }
+    }
+    const { changed, releasedRunIds } = reconcileActiveRuns(state, (id) => probes.get(id) || { kind: "unreachable" });
+    if (changed) {
+      pushHistory(state, "Released stale command lock", "system", { releasedRunIds });
+    }
+  });
 }
