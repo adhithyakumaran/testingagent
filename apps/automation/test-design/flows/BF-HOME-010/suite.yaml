@@ -8,11 +8,18 @@ tags:
 - bf-home-010
 test_cases:
 - TC-BF-HOME-010-P01
+- TC-BF-HOME-010-P02
+- TC-BF-HOME-010-P03
+- TC-BF-HOME-010-P04
+- TC-BF-HOME-010-P05
+- TC-BF-HOME-010-P06
 - TC-BF-HOME-010-N01
 - TC-BF-HOME-010-E01
 - TC-BF-HOME-010-E02
 sanity_subset:
 - TC-BF-HOME-010-P01
+- TC-BF-HOME-010-P02
+- TC-BF-HOME-010-P03
 runner:
   framework: playwright
   command_template: npx playwright test --grep '@{flow_id}'
