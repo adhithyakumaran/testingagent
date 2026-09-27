@@ -26,13 +26,22 @@ def goal_matches_gt(
     executed_test_case_ids: list[str] | None = None,
 ) -> bool:
     gt_flow = str(fact.get("flow_id") or "").strip()
+    exec_flows: set[str] = set()
+    if executed_test_case_ids:
+        exec_flows = {f for f in (flow_id_from_test_case_id(tc) for tc in executed_test_case_ids) if f}
+
     if primary_flow_id and gt_flow and gt_flow != primary_flow_id:
-        return False
+        # Executable flow on disk (e.g. BF-HOME-010-01) may differ from planner primary (e.g. BF-PRODUCT-003).
+        if not (exec_flows and gt_flow in exec_flows):
+            return False
 
     if executed_test_case_ids and gt_flow:
-        exec_flows = {f for f in (flow_id_from_test_case_id(tc) for tc in executed_test_case_ids) if f}
         if exec_flows and gt_flow not in exec_flows:
             return False
+
+    bound_tc = str(fact.get("test_case_id") or "").strip()
+    if bound_tc and executed_test_case_ids and bound_tc in executed_test_case_ids:
+        return True
 
     kind = resolve_product_intent_kind(goal)
     if kind == "view_product" and gt_flow == FLOW_SEARCH_PRODUCT:

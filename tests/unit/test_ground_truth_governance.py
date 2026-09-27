@@ -20,6 +20,7 @@ from qa_orchestrator.models import (
     ExecutionResult,
     PlanStep,
     StepObservation,
+    SuiteSelectionPlan,
     ValidationResult,
 )
 from qa_orchestrator.validator import Validator
@@ -214,3 +215,139 @@ def test_phase_a_diagnostic_selected_test_case_ids_from_state():
         state=state,
     )
     assert diag["selected_test_case_ids"] == ["TC-BF-PRODUCT-003-P01"]
+
+
+def _home_gt_approved(tmp_path: Path) -> Path:
+    gt_dir = tmp_path / "gt"
+    gt_dir.mkdir()
+    doc = {
+        "id": "gt-bf-home-010-01-positive",
+        "status": "approved",
+        "subject": "item search",
+        "flow_id": "BF-HOME-010-01",
+        "test_case_id": "TC-BF-HOME-010-01-P01",
+        "tags": ["BF-HOME-010-01", "item search", "TC-BF-HOME-010-01-P01"],
+        "expectations": {
+            "execution_ok": True,
+            "min_passed_tests": 1,
+            "require_product_search_verified": True,
+        },
+    }
+    path = gt_dir / "gt-bf-home-010-01-positive.json"
+    path.write_text(json.dumps(doc), encoding="utf-8")
+    return gt_dir
+
+
+def test_approved_home_gt_runs_phase_b_when_executed_tc_matches_despite_product_primary(tmp_path: Path):
+    gt_dir = _home_gt_approved(tmp_path)
+    kb = KbRag(f"{DISCOVERY_ROOT}/kb")
+    validator = Validator(kb, gt_dir=gt_dir)
+    goal = "BF-HOME-010-01 — Item Search using SKU 552811DUDABA00"
+    suite = SuiteSelectionPlan(
+        flow_ids=["BF-HOME-010-01", "BF-PRODUCT-003"],
+        primary_executable_flow_id="BF-PRODUCT-003",
+        commands=["npx playwright test"],
+    )
+    state = AgentRunState(
+        run_id="run_7on3pn3amh77",
+        request=goal,
+        metadata={"executed_test_case_ids": ["TC-BF-HOME-010-01-P01"]},
+    )
+    execution = _obs(param_trace={"product_search_result_verified": "true"})
+    result = validator.validate(
+        goal=goal,
+        run_type="adhoc",
+        plan=ExecutionPlan(goal=goal, steps=[]),
+        execution=execution,
+        suite_plan=suite,
+        diagnostic_context={"run_id": "run_7on3pn3amh77", "state": state},
+    )
+    assert result.phase == "B"
+    assert result.conclusion == "PASS"
+    assert result.reason_code == "validator.gt_match"
+    assert result.reason_code != "validator.pre_gt_honest"
+
+
+def test_validator_reloads_approved_gt_without_process_restart(tmp_path: Path):
+    gt_dir = tmp_path / "gt"
+    gt_dir.mkdir()
+    kb = KbRag(f"{DISCOVERY_ROOT}/kb")
+    validator = Validator(kb, gt_dir=gt_dir)
+    goal = "BF-HOME-010-01 — Item Search using SKU 552811DUDABA00"
+    suite = SuiteSelectionPlan(
+        flow_ids=["BF-HOME-010-01"],
+        primary_executable_flow_id="BF-HOME-010-01",
+        commands=["npx playwright test"],
+    )
+    state = AgentRunState(
+        run_id="run_reload",
+        request=goal,
+        metadata={"executed_test_case_ids": ["TC-BF-HOME-010-01-P01"]},
+    )
+    execution = _obs(param_trace={"product_search_result_verified": "true"})
+    ctx = {"run_id": "run_reload", "state": state}
+
+    before = validator.validate(
+        goal=goal,
+        run_type="adhoc",
+        plan=ExecutionPlan(goal=goal, steps=[]),
+        execution=execution,
+        suite_plan=suite,
+        diagnostic_context=ctx,
+    )
+    assert before.phase == "A"
+    assert before.reason_code == "validator.pre_gt_honest"
+
+    (gt_dir / "gt-bf-home-010-01-positive.json").write_text(
+        json.dumps(
+            {
+                "id": "gt-bf-home-010-01-positive",
+                "status": "approved",
+                "flow_id": "BF-HOME-010-01",
+                "test_case_id": "TC-BF-HOME-010-01-P01",
+                "tags": ["BF-HOME-010-01", "item search"],
+                "expectations": {
+                    "execution_ok": True,
+                    "min_passed_tests": 1,
+                    "require_product_search_verified": True,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    after = validator.validate(
+        goal=goal,
+        run_type="adhoc",
+        plan=ExecutionPlan(goal=goal, steps=[]),
+        execution=execution,
+        suite_plan=suite,
+        diagnostic_context=ctx,
+    )
+    assert after.phase == "B"
+    assert after.conclusion == "PASS"
+
+
+def test_phase_a_diagnostics_do_not_loosely_claim_gt_match_when_context_mismatches(tmp_path: Path):
+    gt_dir = _home_gt_approved(tmp_path)
+    kb = KbRag(f"{DISCOVERY_ROOT}/kb")
+    validator = Validator(kb, gt_dir=gt_dir)
+    goal = "BF-HOME-010-01 — Item Search using SKU 552811DUDABA00"
+    suite = SuiteSelectionPlan(
+        flow_ids=["BF-PRODUCT-003"],
+        primary_executable_flow_id="BF-PRODUCT-003",
+        commands=["npx playwright test"],
+    )
+    result = validator.validate(
+        goal=goal,
+        run_type="adhoc",
+        plan=ExecutionPlan(goal=goal, steps=[]),
+        execution=_obs(param_trace={"product_search_result_verified": "true"}),
+        suite_plan=suite,
+        diagnostic_context={"run_id": "run_diag", "state": AgentRunState(run_id="run_diag", request=goal)},
+    )
+    assert result.phase == "A"
+    assert result.reason_code == "validator.pre_gt_honest"
+    gt_diag = result.decision_diagnostics["ground_truth"]
+    assert gt_diag["approved_available"] is False
+    assert gt_diag["matched_for_goal"] is False

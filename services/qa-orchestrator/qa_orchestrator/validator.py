@@ -40,6 +40,7 @@ class Validator:
         discovery: DiscoveryResult | None = None,
         diagnostic_context: dict[str, Any] | None = None,
     ) -> ValidationResult:
+        self._approved_gt = self._load_approved_gt()
         ctx = dict(diagnostic_context or {})
         matched_gt = self._matching_gt(
             goal,
@@ -212,7 +213,12 @@ class Validator:
             summary=summary,
             findings=findings,
         )
-        approved_match = self._matching_gt(goal)
+        approved_match = self._matching_gt(
+            goal,
+            intent=intent,
+            suite_plan=suite_plan,
+            diagnostic_context=diagnostic_context,
+        )
         result.decision_diagnostics = build_validation_phase_a_diagnostic(
             run_id=diagnostic_context.get("run_id") if diagnostic_context else None,
             validation=result,
