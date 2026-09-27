@@ -2,69 +2,28 @@ import { spawn } from "child_process";
 import path from "path";
 import type { AgentRun, KnowledgePill, TraceEvent } from "@/lib/types";
 import { repoRoot } from "@/lib/repo-root";
-import { internalAgentHeaders } from "@/lib/internal-agent";
 import { applyOrchestratorResultToRun, enrichWaitingRunFromAgent } from "@/lib/orchestrator-bridge";
 import { shouldSkipDuplicateOrchestration } from "@/lib/run-execution-guard";
 import { emitRunSubmitDiagnostic } from "@/lib/run-submit-diagnostics";
+import { fetchWarmAgentRunResult, pollWarmAgentRunResult, postWarmAgentRun } from "@/lib/warm-agent-client";
 import { uid } from "@/lib/utils";
 
 const REPO_ROOT = repoRoot();
-const LOCAL_AGENT_URL = process.env.LOCAL_AGENT_URL || "http://127.0.0.1:43124";
-
-const AGENT_TERMINAL = new Set(["COMPLETED", "FAILED", "BLOCKED", "NEEDS_REVIEW", "PASS", "FAIL"]);
-
-function agentSnapshotToResult(body: Record<string, unknown>): Record<string, unknown> {
-  return {
-    conclusion: body.final_result || body.status,
-    reason_code: body.reason_code,
-    summary: body.summary,
-    decision_diagnostics: body.decision_diagnostics,
-    metadata: { decision_diagnostics: body.decision_diagnostics, run_id: body.run_id },
-    agent: body,
-    local: {
-      execution_mode: process.env.NEXT_PUBLIC_QA_EXECUTION_MODE || "LIVE_DEMO",
-      classifier: "warm_agent_recovered",
-    },
-  };
-}
 
 async function probeWarmAgentRun(runId: string): Promise<Record<string, unknown> | null> {
-  try {
-    const res = await fetchInternalAgent(`/agent/${encodeURIComponent(runId)}`, {
-      cache: "no-store",
-      signal: AbortSignal.timeout(8_000),
-    });
-    if (res.status === 404) return null;
-    if (!res.ok) return { _probe: "unreachable" };
-    return (await res.json()) as Record<string, unknown>;
-  } catch {
-    return { _probe: "unreachable" };
-  }
+  const polled = await fetchWarmAgentRunResult(runId);
+  if (!polled) return { _probe: "unreachable" };
+  if (polled.httpStatus === 404) return null;
+  return polled.body;
 }
 
 async function recoverWarmAgentResult(
-  runId: string,
-  opts: { goal: string; runType: string; model: string; executionMode?: string }
+  runId: string
 ): Promise<{ ok: boolean; result?: Record<string, unknown>; error?: string; via?: string } | null> {
-  const deadline = Date.now() + 120_000;
-  while (Date.now() < deadline) {
-    const body = await probeWarmAgentRun(runId);
-    if (!body) return null;
-    if (body._probe === "unreachable") {
-      await new Promise((r) => setTimeout(r, 2_000));
-      continue;
-    }
-    const status = String(body.status || "");
-    if (AGENT_TERMINAL.has(status)) {
-      return { ok: true, result: agentSnapshotToResult(body), via: "warm-recovered" };
-    }
-    await new Promise((r) => setTimeout(r, 2_000));
-  }
-  return {
-    ok: false,
-    error: "warm_agent_active_but_result_not_ready",
-    via: "warm-recover-timeout",
-  };
+  const polled = await pollWarmAgentRunResult(runId);
+  if (polled.ok) return polled;
+  if (polled.error === "warm_agent_run_not_found") return null;
+  return polled;
 }
 
 function extractPills(pills: KnowledgePill[]) {
@@ -105,46 +64,8 @@ async function invokeWarmAgent(
     runId?: string;
     executionMode?: string;
   }
-): Promise<{
-  ok: boolean;
-  result?: Record<string, unknown>;
-  error?: string;
-  via?: string;
-}> {
-  try {
-    const res = await fetch(`${LOCAL_AGENT_URL}/run`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(internalAgentHeaders()),
-      },
-      body: JSON.stringify({
-        goal,
-        run_type: opts.runType,
-        run_id: opts.runId,
-        model: opts.model === "disabled" ? null : opts.model,
-        context_packets: opts.contextPackets,
-        execution_mode: opts.executionMode ?? "LIVE_DEMO",
-        skip_execution: false,
-        allow_skip_execution: false,
-      }),
-      signal: AbortSignal.timeout(120_000),
-    });
-    if (!res.ok) {
-      return { ok: false, error: `warm_agent_http_${res.status}`, via: "warm" };
-    }
-    const json = (await res.json()) as { ok?: boolean; result?: Record<string, unknown>; error?: string };
-    if (!json.ok || !json.result) {
-      return { ok: false, error: json.error || "warm_agent_bad_payload", via: "warm" };
-    }
-    return { ok: true, result: json.result, via: "warm" };
-  } catch (e) {
-    return {
-      ok: false,
-      error: e instanceof Error ? e.message : String(e),
-      via: "warm",
-    };
-  }
+) {
+  return postWarmAgentRun(goal, opts);
 }
 
 async function invokePythonAgentSpawn(
@@ -236,12 +157,7 @@ async function invokePythonAgent(
   if (opts.runId) {
     const probe = await probeWarmAgentRun(opts.runId);
     if (probe && !probe._probe) {
-      const recovered = await recoverWarmAgentResult(opts.runId, {
-        goal,
-        runType: opts.runType,
-        model: opts.model,
-        executionMode: opts.executionMode,
-      });
+      const recovered = await recoverWarmAgentResult(opts.runId);
       if (recovered?.ok) return recovered;
       return {
         ok: false,

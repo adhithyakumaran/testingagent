@@ -52,6 +52,7 @@ _load_dotenv()
 
 from qa_orchestrator.legacy_guard import assert_canonical_agent_path, canonical_path_metadata  # noqa: E402
 from qa_orchestrator.orchestrator import QaOrchestrator, RunRequest  # noqa: E402
+from qa_orchestrator.warm_run_registry import WarmRunRegistry  # noqa: E402
 from qa_orchestrator.server_auth import (  # noqa: E402
     acquire_concurrency,
     allowed_origin,
@@ -77,6 +78,11 @@ class LocalOrchestratorService:
         self.default_model = default_model
         t0 = time.perf_counter()
         self.orchestrator = QaOrchestrator(discovery_root=discovery_root, model=default_model)
+        journal_dir = os.environ.get(
+            "QA_AGENT_JOURNAL_DIR",
+            str(ROOT / "reports" / "agent"),
+        )
+        self.run_registry = WarmRunRegistry(journal_dir=journal_dir)
         self.boot_ms = int((time.perf_counter() - t0) * 1000)
         self.runs = 0
 
@@ -142,6 +148,66 @@ class LocalOrchestratorService:
 
             log_decision_block(payload["decision_diagnostics"], stream=sys.stderr)
         return payload
+
+    def accept_run_async(self, req: RunRequest) -> dict[str, Any]:
+        """Accept run_id immediately; orchestration continues on a background thread."""
+        run_id = self.run_registry.ensure_run_id(req.run_id)
+        req.run_id = run_id
+
+        def worker() -> dict[str, Any]:
+            return self.run(
+                req.goal,
+                run_request=req,
+            )
+
+        token, job = self.run_registry.accept(run_id, worker)
+        if job.status == "completed" and job.payload:
+            return {
+                "ok": True,
+                "accepted": False,
+                "run_id": run_id,
+                "status": "completed",
+                "result": job.payload,
+            }
+        if job.status == "failed":
+            return {
+                "ok": False,
+                "accepted": False,
+                "run_id": run_id,
+                "status": "failed",
+                "error": job.error or "orchestrator_failed",
+            }
+        return {
+            "ok": True,
+            "accepted": token == "started",
+            "run_id": run_id,
+            "status": "running",
+        }
+
+    def get_run_result(self, run_id: str) -> dict[str, Any]:
+        job = self.run_registry.get_job(run_id)
+        if job is None:
+            raise FileNotFoundError(f"no warm run job for run_id={run_id}")
+        if job.status == "running":
+            return {
+                "ok": True,
+                "run_id": run_id,
+                "status": "running",
+                "started_at": job.started_at,
+            }
+        if job.status == "failed":
+            return {
+                "ok": False,
+                "run_id": run_id,
+                "status": "failed",
+                "error": job.error or "orchestrator_failed",
+            }
+        return {
+            "ok": True,
+            "run_id": run_id,
+            "status": "completed",
+            "result": job.payload,
+        }
 
     def get_agent(self, run_id: str) -> dict[str, Any]:
         snapshot = self.orchestrator.get_agent_state(run_id)
@@ -229,16 +295,28 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802
         path = urlparse(self.path).path
-        if path.startswith("/agent/") and path.count("/") == 2:
+        parts = [p for p in path.split("/") if p]
+        if len(parts) >= 2 and parts[0] == "agent":
             if not self._require_auth(path):
                 return
-            run_id = path.split("/")[-1]
+            run_id = parts[1]
             assert SERVICE is not None
-            try:
-                self._json(200, SERVICE.get_agent(run_id))
-            except Exception as exc:  # noqa: BLE001
-                self._json(404, {"ok": False, "error": f"{type(exc).__name__}:{exc}"})
-            return
+            if len(parts) == 3 and parts[2] == "result":
+                try:
+                    body = SERVICE.get_run_result(run_id)
+                    code = 200 if body.get("status") != "running" else 202
+                    self._json(code, body)
+                except FileNotFoundError as exc:
+                    self._json(404, {"ok": False, "error": str(exc)})
+                except Exception as exc:  # noqa: BLE001
+                    self._json(500, {"ok": False, "error": f"{type(exc).__name__}:{exc}"})
+                return
+            if len(parts) == 2:
+                try:
+                    self._json(200, SERVICE.get_agent(run_id))
+                except Exception as exc:  # noqa: BLE001
+                    self._json(404, {"ok": False, "error": f"{type(exc).__name__}:{exc}"})
+                return
         if path in {"/health", "/"}:
             assert SERVICE is not None
             orch = SERVICE.orchestrator
@@ -329,23 +407,43 @@ class Handler(BaseHTTPRequestHandler):
         if req.run_id:
             security_log("run_accepted", run_id=str(req.run_id), path=path)
         try:
-            result = SERVICE.run(
-                req.goal,
-                run_request=req,
-            )
-            chat_response = {
-                "message": result.get("summary", ""),
-                "conclusion": result.get("conclusion"),
-                "execution_mode": result.get("local", {}).get("execution_mode"),
-                "report_markdown": result.get("local", {}).get("report_markdown"),
-                "suite_plan": result.get("local", {}).get("suite_plan"),
-            }
+            accepted = SERVICE.accept_run_async(req)
+            if accepted.get("status") == "completed" and accepted.get("result"):
+                result = accepted["result"]
+                chat_response = {
+                    "message": result.get("summary", ""),
+                    "conclusion": result.get("conclusion"),
+                    "execution_mode": result.get("local", {}).get("execution_mode"),
+                    "report_markdown": result.get("local", {}).get("report_markdown"),
+                    "suite_plan": result.get("local", {}).get("suite_plan"),
+                }
+                self._json(
+                    200,
+                    {
+                        "ok": True,
+                        "run_id": accepted.get("run_id"),
+                        "result": result,
+                        "chat": chat_response if path == "/chat" else None,
+                    },
+                )
+                return
+            if accepted.get("status") == "failed":
+                self._json(
+                    500,
+                    {
+                        "ok": False,
+                        "run_id": accepted.get("run_id"),
+                        "error": accepted.get("error") or "orchestrator_failed",
+                    },
+                )
+                return
             self._json(
-                200,
+                202,
                 {
                     "ok": True,
-                    "result": result,
-                    "chat": chat_response if path == "/chat" else None,
+                    "accepted": True,
+                    "run_id": accepted.get("run_id"),
+                    "status": "running",
                 },
             )
         except Exception as exc:  # noqa: BLE001

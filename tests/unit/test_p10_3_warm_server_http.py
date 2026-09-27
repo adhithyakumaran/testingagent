@@ -94,19 +94,36 @@ def test_run_rejects_missing_auth(warm_server_auth):
 
 def test_run_accepts_valid_internal_token(warm_server_auth):
     base, _ = warm_server_auth
-    payload = json.dumps({"goal": "Check login", "run_type": "adhoc", "skip_execution": True}).encode("utf-8")
+    run_id = "run_p10_accept"
+    payload = json.dumps(
+        {"goal": "Check login", "run_type": "adhoc", "skip_execution": True, "run_id": run_id}
+    ).encode("utf-8")
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer p10-test-internal",
+    }
     code, body = _http(
         "POST",
         f"{base}/run",
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": "Bearer p10-test-internal",
-        },
+        headers=headers,
         body=payload,
     )
-    assert code == 200, body[:500]
+    assert code == 202, body[:500]
     data = json.loads(body)
-    canonical = data["result"]["local"]["canonical"]
+    assert data.get("run_id") == run_id
+    assert data.get("accepted") is True
+
+    deadline = time.time() + 90
+    result_payload = None
+    while time.time() < deadline:
+        poll_code, poll_body = _http("GET", f"{base}/agent/{run_id}/result", headers=headers)
+        poll = json.loads(poll_body)
+        if poll_code == 200 and poll.get("status") == "completed":
+            result_payload = poll["result"]
+            break
+        time.sleep(0.5)
+    assert result_payload is not None
+    canonical = result_payload["local"]["canonical"]
     assert canonical["legacy_runtime_canonical"] == "false"
     assert "ControlledAgentLoop" in canonical["orchestrator_path"]
     assert "p10-test-internal" not in body
